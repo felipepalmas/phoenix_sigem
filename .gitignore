@@ -1,0 +1,51 @@
+/vendor/
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Laravel 4 specific
+bootstrap/compiled.php
+app/storage/
+
+# Laravel 5 & Lumen specific
+public/storage
+public/hot
+
+# Laravel 5 & Lumen specific with changed public path
+public_html/storage
+public_html/hot
+
+storage/*.key
+.env
+Homestead.yaml
+Homestead.json
+/.vagrant
+.phpunit.result.cache
+
+/public/build
+/storage/pail
+.env.backup
+.env.production
+.phpactor.json
+auth.json
+
+# SQLite & Logs
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.log
+storage/logs/*.log
+LivreOS/sistema_livreos/storage/logs/*.log
+
+# Debug & Temporary Files
+scratch/
+LivreOS/sistema_livreos/scratch/
+cookie_*.txt
+cookies_*.txt
+busca_debug.txt
+response_*.html
+response_*.txt
+dash_res.html
+dashboard_test.html
+

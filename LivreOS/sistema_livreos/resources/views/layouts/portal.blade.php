@@ -179,7 +179,7 @@
             </div>
 
             <div class="mt-8 border-t border-gray-100 pt-6 dark:border-gray-800 flex flex-col sm:flex-row items-center justify-between text-[11px] text-gray-400">
-                <p>© {{ date('Y') }} Prefeitura Municipal — Todos os direitos reservados. Software Livre sob licença <a href="https://github.com/livreos/livreos" target="_blank" rel="noopener noreferrer" class="underline hover:text-brand-600 dark:hover:text-brand-400">GNU AGPLv3 (Código-Fonte Aberto)</a>.</p>
+                <p>© {{ date('Y') }} Prefeitura Municipal — Todos os direitos reservados. Software Livre sob licença <a href="https://github.com/felipepalmas/phoenix_sigem" target="_blank" rel="noopener noreferrer" class="underline hover:text-brand-600 dark:hover:text-brand-400">GNU AGPLv3 (Código-Fonte Aberto)</a>.</p>
                 <p class="mt-2 sm:mt-0">Powered by <strong>Phoenix - SIGEM</strong></p>
             </div>
         </div>

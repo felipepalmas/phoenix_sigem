@@ -343,7 +343,7 @@
                 Guarde este comprovante para sua referência.
             @endif
             <br>Obrigado pela preferência!
-            <br><br>Emitido em {{ now()->format('d/m/Y \à\s H:i') }} &middot; LivreOS - ERP Open Source Livre
+            <br><br>Emitido em {{ now()->format('d/m/Y \à\s H:i') }} &middot; {{ config('app.name', 'Phoenix - SIGEM') }} - {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}
         </div>
     </div>
 </body>

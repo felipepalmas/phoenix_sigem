@@ -116,6 +116,6 @@
     @endforelse
         </div>
     </div>
-    <footer class="pdf-footer">Emitido em {{ $emitidoEm }} · Gerado por: {{ $userName ?? 'Sistema' }} · {{ config('app.name', 'LivreOS') }} - {{ config('app.tagline', 'ERP Open Source Livre') }}</footer>
+    <footer class="pdf-footer">Emitido em {{ $emitidoEm }} · Gerado por: {{ $userName ?? 'Sistema' }} · {{ config('app.name', 'Phoenix - SIGEM') }} - {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}</footer>
 </body>
 </html>

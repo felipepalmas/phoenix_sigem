@@ -1,10 +1,10 @@
-# LivreOS
+# Phoenix - SIGEM
 
-**LivreOS** — ERP Open Source Livre
+**Phoenix - SIGEM** — Sistema Integrado de Gestão Municipal
 
-Sistema de gestão com ordens de serviço, financeiro, clientes, produtos, serviços e módulo de plugins.
+Plataforma municipal integrada de processos administrativos, protocolo zero papel, zeladoria urbana, almoxarifado setorial, gestão de frotas e portal do cidadão, baseada em LivreOS.
 
-- **Site:** [https://www.livreos.com.br](https://www.livreos.com.br)
+- **Repositório:** [https://github.com/felipepalmas/phoenix_sigem](https://github.com/felipepalmas/phoenix_sigem)
 - **Licença:** [GNU AGPL v3.0](LICENSE) — texto integral no repositório e em [https://www.gnu.org/licenses/agpl-3.0.txt](https://www.gnu.org/licenses/agpl-3.0.txt)
 
 ## Autor e copyright
@@ -351,6 +351,6 @@ Acesse **Configurações** para ajustar o comportamento do módulo:
 
 ## Licença
 
-Este projeto (código desenvolvido pelo LivreOS) está sob a **GNU Affero General Public License v3.0** (AGPL-3.0). Veja o arquivo [LICENSE](LICENSE) para o aviso de copyright do projeto e o texto integral da licença.
+Este projeto (Phoenix - SIGEM, derivado do LivreOS) está sob a **GNU Affero General Public License v3.0** (AGPL-3.0). Veja o arquivo [LICENSE](LICENSE) para o aviso de copyright do projeto e o texto integral da licença.
 
 Bibliotecas de terceiros (por exemplo em `vendor/` e `node_modules/`) permanecem sob as respetivas licenças.

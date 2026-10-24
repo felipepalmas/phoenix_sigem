@@ -35,7 +35,7 @@ class CnpjConsultaPublicaService
                 $response = Http::timeout(14)
                     ->withHeaders([
                         'Accept' => 'application/json',
-                        'User-Agent' => 'LivreOS-ERP/1.0',
+                        'User-Agent' => 'Phoenix-SIGEM/1.0',
                     ])
                     ->get($url);
                 if (! $response->successful()) {

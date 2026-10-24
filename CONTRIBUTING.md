@@ -1,4 +1,4 @@
-# Contribuindo para o LivreOS (Contributing Guidelines)
+# Contribuindo para o Phoenix - SIGEM (Contributing Guidelines)
 
 ## Obrigado por querer contribuir!
 A comunidade livre se mantém viva graças à colaboração de desenvolvedores, designers e usuários como você. Siga estas diretrizes para que sua contribuição seja bem‑recebida.
@@ -6,8 +6,8 @@ A comunidade livre se mantém viva graças à colaboração de desenvolvedores, 
 ### 1. Configurando o ambiente de desenvolvimento
 ```bash
 # Clone o repositório
-git clone https://github.com/viniciusvams/LivreOS.git
-cd LivreOS
+git clone https://github.com/felipepalmas/phoenix_sigem.git
+cd phoenix_sigem
 
 # Instale as dependências PHP (Composer) e front‑end (npm)
 composer install
@@ -66,8 +66,8 @@ Ao participar, você concorda em seguir o [Código de Conduta](CODE_OF_CONDUCT.m
 ### 1. Set up your development environment
 ```bash
 # Clone the repository
-git clone https://github.com/viniciusvams/LivreOS.git
-cd LivreOS
+git clone https://github.com/felipepalmas/phoenix_sigem.git
+cd phoenix_sigem
 
 # Install PHP and front‑end dependencies
 composer install

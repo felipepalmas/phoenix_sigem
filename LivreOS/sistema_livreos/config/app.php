@@ -14,11 +14,11 @@
  */
 
 /**
- * Configuração da aplicação LivreOS
+ * Configuração da aplicação Phoenix - SIGEM
  *
- * @author viniciusvams
- * @license GPL-3.0
- * @link https://www.livreos.com.br
+ * @author viniciusvams / Phoenix SIGEM Team
+ * @license AGPL-3.0
+ * @link https://github.com/felipepalmas/phoenix_sigem
  */
 
 return [
@@ -34,14 +34,14 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'LivreOS'),
+    'name' => env('APP_NAME', 'Phoenix - SIGEM'),
 
     /*
     |--------------------------------------------------------------------------
     | Application Tagline (ex.: rodapé de PDFs)
     |--------------------------------------------------------------------------
     */
-    'tagline' => env('APP_TAGLINE', 'ERP Open Source Livre'),
+    'tagline' => env('APP_TAGLINE', 'Sistema Integrado de Gestão Municipal'),
 
     /*
     |--------------------------------------------------------------------------

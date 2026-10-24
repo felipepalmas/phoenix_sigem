@@ -167,11 +167,15 @@
                     <!-- ===== Common Grid Shape Start ===== -->
                     <x-common.common-grid-shape />
                     <div class="flex max-w-xs flex-col items-center">
-                        <a href="/" class="mb-4 block">
-                            <img src="./images/logo/auth-logo.svg" alt="Logo" />
+                        <a href="/" class="mb-4 flex items-center justify-center">
+                            @php
+                                $logoPath = config('app.logo_path');
+                                $logoSrc = ($logoPath && file_exists(public_path($logoPath))) ? asset($logoPath) : asset('logo/phoenix_logo.png');
+                            @endphp
+                            <img src="{{ $logoSrc }}" alt="{{ config('app.name') }}" class="max-h-48 w-auto object-contain drop-shadow-2xl" />
                         </a>
-                        <p class="text-center text-gray-400 dark:text-white/60">
-                            Free and Open-Source Tailwind CSS Admin Dashboard Template
+                        <p class="text-center text-sm font-semibold tracking-wide text-amber-400">
+                            {{ config('app.tagline') }}
                         </p>
                     </div>
                 </div>

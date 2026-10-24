@@ -29,7 +29,7 @@
     $municipio = $empresa && !empty(trim((string) $empresa->cidade)) ? trim($empresa->cidade) : null;
     $dataExtenso = \Carbon\Carbon::now()->locale('pt_BR')->translatedFormat('j \d\e F \d\e Y');
     $dataEmissao = now()->format('d/m/Y \à\s H:i');
-    $pdfFooterTexto = config('app.name') . ' - ' . config('app.tagline', 'ERP Open Source Livre');
+    $pdfFooterTexto = config('app.name') . ' - ' . config('app.tagline', 'Sistema Integrado de Gestão Municipal');
     if ($empresa && ($empresa->logradouro || $empresa->cidade)) {
         $parts = [
             trim($empresa->logradouro ?? ''),

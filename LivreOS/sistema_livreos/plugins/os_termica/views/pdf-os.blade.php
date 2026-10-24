@@ -264,7 +264,7 @@
     </div>
 
     <div class="mt-2 text-center" style="font-size: 0.8em; color: #555; margin-top: 20px;">
-        Emitido em {{ date('d/m/Y') }} às {{ date('H:i') }} &middot; LivreOS - ERP Open Source Livre
+        Emitido em {{ date('d/m/Y') }} às {{ date('H:i') }} &middot; {{ config('app.name', 'Phoenix - SIGEM') }} - {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}
     </div>
 
     <div class="espaco-final"></div>

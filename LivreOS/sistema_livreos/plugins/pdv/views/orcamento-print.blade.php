@@ -266,7 +266,7 @@
         @endif
 
         <div style="margin-top: 20px; text-align: center; font-size: 11px; color: #6b7280;">
-            Emitido em {{ now()->format('d/m/Y \à\s H:i') }} &middot; LivreOS - ERP Open Source Livre
+            Emitido em {{ now()->format('d/m/Y \à\s H:i') }} &middot; {{ config('app.name', 'Phoenix - SIGEM') }} - {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}
         </div>
     </div>
 </body>

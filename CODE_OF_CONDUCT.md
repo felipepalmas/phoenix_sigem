@@ -3,7 +3,7 @@
 ## Português (Brasil)
 
 ### Nosso Compromisso
-Nós, como colaboradores e mantenedores do **LivreOS**, nos comprometemos a criar um ambiente acolhedor, livre de discriminação e assédio. Qualquer participante, independentemente de gênero, identidade ou expressão de gênero, orientação sexual, deficiência, aparência física, raça, etnia, religião ou crenças, ou qualquer outra característica pessoal, tem direito a participar sem medo de hostilidades.
+Nós, como colaboradores e mantenedores do **Phoenix - SIGEM**, nos comprometemos a criar um ambiente acolhedor, livre de discriminação e assédio. Qualquer participante, independentemente de gênero, identidade ou expressão de gênero, orientação sexual, deficiência, aparência física, raça, etnia, religião ou crenças, ou qualquer outra característica pessoal, tem direito a participar sem medo de hostilidades.
 
 ### Comportamento Esperado
 - **Respeito**: Trate todas as pessoas com cortesia e consideração.
@@ -20,7 +20,7 @@ Nós, como colaboradores e mantenedores do **LivreOS**, nos comprometemos a cria
 
 ### Como Reportar Incidentes
 Se você testemunhar ou for vítima de comportamento que viole este Código de Conduta, por favor, entre em contato com os mantenedores **via**:
-- Email: `contato@livreos.com.br`
+- Email: `contato@nonoai.rs.gov.br`
 - **GitHub**: abra uma issue marcada como `type: conduct` (acesso restrito aos mantenedores).
 Todas as denúncias serão tratadas com seriedade, confidencialidade e com rapidez.
 
@@ -35,7 +35,7 @@ Violação deste código pode resultar em:
 ## English
 
 ### Our Commitment
-We, as contributors and maintainers of **LivreOS**, commit to providing a welcoming and harassment‑free environment. Everyone—regardless of gender, gender identity or expression, sexual orientation, disability, physical appearance, race, ethnicity, religion, or any other personal characteristic—has the right to participate without fear of hostility.
+We, as contributors and maintainers of **Phoenix - SIGEM**, commit to providing a welcoming and harassment‑free environment. Everyone—regardless of gender, gender identity or expression, sexual orientation, disability, physical appearance, race, ethnicity, religion, or any other personal characteristic—has the right to participate without fear of hostility.
 
 ### Expected Behavior
 - **Respect**: Treat everyone with courtesy and consideration.
@@ -52,7 +52,7 @@ We, as contributors and maintainers of **LivreOS**, commit to providing a welcom
 
 ### Reporting
 If you experience or witness behavior that violates this Code of Conduct, please contact the maintainers **via**:
-- Email: `contato@livreos.com.br`
+- Email: `contato@nonoai.rs.gov.br`
 - **GitHub**: open an issue with the label `type: conduct` (maintainers only have access).
 All reports will be handled promptly and confidentially.
 

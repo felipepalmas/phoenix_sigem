@@ -37,6 +37,14 @@ auth.json
 *.log
 storage/logs/*.log
 LivreOS/sistema_livreos/storage/logs/*.log
+LivreOS/sistema_livreos/storage/framework/views/*
+!LivreOS/sistema_livreos/storage/framework/views/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+LivreOS/sistema_livreos/storage/framework/sessions/*
+!LivreOS/sistema_livreos/storage/framework/sessions/.gitignore
+LivreOS/sistema_livreos/storage/framework/cache/*
+!LivreOS/sistema_livreos/storage/framework/cache/.gitignore
 
 # Debug & Temporary Files
 scratch/

@@ -887,7 +887,7 @@ async function buscarDadosCnpjPublicoQuick(cnpj) {
     ];
     const headers = {
         'Accept': 'application/json',
-        'User-Agent': 'LivreOS-ERP/1.0',
+        'User-Agent': 'Phoenix-SIGEM/1.0',
     };
     const responses = await Promise.all(urls.map((url) => fetch(url, { headers })));
     const valid = [];

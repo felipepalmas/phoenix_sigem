@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "phoenix/sigem",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "Phoenix - SIGEM — Sistema Integrado de Gestão Municipal",
+    "keywords": ["phoenix", "sigem", "gestao-municipal", "protocolo", "zeladoria", "almoxarifado", "frota", "portal-cidadao"],
     "license": "AGPL-3.0-only",
     "require": {
         "php": "^8.2",

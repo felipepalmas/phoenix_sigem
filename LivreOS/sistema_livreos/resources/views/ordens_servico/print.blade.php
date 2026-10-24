@@ -587,7 +587,7 @@
         $footerUser = auth()->user();
         $mostrarGeradoPor = $footerUser && !$footerUser->is_admin;
     @endphp
-    <footer class="pdf-footer">Emitido em {{ $emitidoEm ?? now()->format('d/m/Y \à\s H:i') }}@if($mostrarGeradoPor) · Gerado por: {{ $userName ?? $footerUser->name ?? 'Sistema' }}@endif · {{ config('app.name') }} - {{ config('app.tagline', 'ERP Open Source Livre') }}</footer>
+    <footer class="pdf-footer">Emitido em {{ $emitidoEm ?? now()->format('d/m/Y \à\s H:i') }}@if($mostrarGeradoPor) · Gerado por: {{ $userName ?? $footerUser->name ?? 'Sistema' }}@endif · {{ config('app.name') }} - {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}</footer>
 
     <script>
         window.print();

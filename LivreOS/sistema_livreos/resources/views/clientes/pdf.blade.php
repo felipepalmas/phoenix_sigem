@@ -14,7 +14,7 @@
 @php
     $empresa = \App\Models\Empresa::first();
     $empresaNome = $empresa?->nome ?? config('app.name', 'ERP');
-    $pdfFooterTexto = config('app.name') . ' - ' . config('app.tagline', 'ERP Open Source Livre');
+    $pdfFooterTexto = config('app.name') . ' - ' . config('app.tagline', 'Sistema Integrado de Gestão Municipal');
 @endphp
 <!DOCTYPE html>
 <html lang="pt-br">

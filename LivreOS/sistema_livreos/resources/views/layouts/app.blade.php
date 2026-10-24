@@ -182,10 +182,10 @@
             </div>
             <footer class="mt-auto border-t border-gray-200 py-4 dark:border-gray-700">
                 <p class="text-center text-sm text-gray-500 dark:text-gray-400">
-                    LivreOS - ERP Open Source Livre
+                    Phoenix - SIGEM — Sistema Integrado de Gestão Municipal
                     -
-                    <a href="https://www.livreos.com.br" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline">
-                        Site oficial
+                    <a href="https://github.com/felipepalmas/phoenix_sigem" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline">
+                        Código Aberto (AGPL-3.0)
                     </a>
                 </p>
             </footer>

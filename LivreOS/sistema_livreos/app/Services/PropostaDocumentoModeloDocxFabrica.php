@@ -196,7 +196,7 @@ class PropostaDocumentoModeloDocxFabrica
 
         $section->addTextBreak(2);
         $section->addText(
-            'Gerado em ${gerado_em} · Proposta #${proposta_id} v${proposta_versao} · LivreOS — ERP Open Source Livre',
+            'Gerado em ${gerado_em} · Proposta #${proposta_id} v${proposta_versao} · Phoenix - SIGEM — Gestão Municipal',
             ['size' => 8.5, 'color' => '9CA3AF'],
             ['alignment' => Jc::CENTER]
         );

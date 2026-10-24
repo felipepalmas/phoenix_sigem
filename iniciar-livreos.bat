@@ -1,7 +1,7 @@
 @echo off
-title LivreOS - Servidor Local
+title Phoenix - SIGEM - Servidor Local
 echo ========================================================
-echo        Iniciando LivreOS - Servidor Local
+echo        Iniciando Phoenix - SIGEM - Servidor Local
 echo ========================================================
 echo.
 echo Acesse no seu navegador: http://127.0.0.1:8000

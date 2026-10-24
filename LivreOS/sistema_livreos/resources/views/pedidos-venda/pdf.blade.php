@@ -312,7 +312,7 @@
         <div class="footer-doc-aviso">Documento não fiscal · Conferir condições comerciais no sistema.</div>
         @endif
         <div class="livreos-credit">
-            LivreOS — {{ config('app.tagline', 'ERP Open Source Livre') }}
+            {{ config('app.name', 'Phoenix - SIGEM') }} — {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}
         </div>
     </div>
 

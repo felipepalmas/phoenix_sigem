@@ -160,6 +160,6 @@
     @endif
 
     <div class="footer">
-        Gerado em {{ now()->format('d/m/Y H:i') }} · Proposta #{{ $proposta->id }} v{{ $proposta->versao }} · LivreOS — ERP Open Source Livre
+        Gerado em {{ now()->format('d/m/Y H:i') }} · Proposta #{{ $proposta->id }} v{{ $proposta->versao }} · {{ config('app.name', 'Phoenix - SIGEM') }} — {{ config('app.tagline', 'Sistema Integrado de Gestão Municipal') }}
     </div>
 </div>

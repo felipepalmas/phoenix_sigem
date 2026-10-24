@@ -875,7 +875,7 @@ class DemoDataSeeder extends Seeder
         $lines = [];
         $lines[] = '=============================================================';
         $lines[] = '  RELATÓRIO DE DADOS DE DEMONSTRAÇÃO - ' . now()->format('d/m/Y H:i');
-        $lines[] = '  LivreOS - Base para conferência';
+        $lines[] = '  Phoenix SIGEM - Base para conferência';
         $lines[] = '=============================================================';
         $lines[] = '';
 

@@ -31,6 +31,18 @@ class Motorista extends Model
         'observacoes',
     ];
 
+    /** Cursos especializados (valor gravado => rótulo). */
+    public const CURSOS = [
+        'direcao_defensiva' => 'Direção defensiva',
+        'primeiros_socorros' => 'Primeiros socorros',
+        'condutor_emergencia_samu' => 'Condutor de veículo de emergência',
+        'transporte_escolar' => 'Transporte escolar',
+        'transporte_coletivo' => 'Transporte coletivo de passageiros',
+        'cargas_perigosas_mopp' => 'Cargas perigosas (MOPP)',
+        'cargas_indivisiveis' => 'Cargas indivisíveis',
+        'operador_maquinas_pesadas' => 'Operador de máquinas pesadas',
+    ];
+
     protected $casts = [
         'cnh_validade' => 'date',
         'cursos_obrigatorios' => 'array',
@@ -56,6 +68,15 @@ class Motorista extends Model
         return $this->user?->name ?: 'Condutor #' . $this->id;
     }
 
+    /** Rótulos dos cursos (aceita também registros antigos gravados com o texto). */
+    public function getCursosFormatadosAttribute(): array
+    {
+        return array_values(array_map(
+            fn ($curso) => self::CURSOS[$curso] ?? (string) $curso,
+            array_filter((array) ($this->cursos_obrigatorios ?? []))
+        ));
+    }
+
     public function isCnhVencida(): bool
     {
         return $this->cnh_validade && $this->cnh_validade->isPast();
@@ -67,22 +88,50 @@ class Motorista extends Model
             return false;
         }
 
-        return $this->cnh_validade->diffInDays(Carbon::now()) <= $dias;
+        // Carbon 3: diffInDays é com sinal; mede de hoje até a validade (positivo no futuro).
+        return Carbon::today()->diffInDays($this->cnh_validade->copy()->startOfDay(), false) <= $dias;
+    }
+
+    /** Dias até a validade da CNH (negativo se já venceu). */
+    public function getDiasParaVencerCnhAttribute(): ?int
+    {
+        return $this->cnh_validade ? (int) Carbon::today()->diffInDays($this->cnh_validade->copy()->startOfDay(), false) : null;
     }
 
     public function getStatusFormatadoAttribute(): string
     {
         if ($this->isCnhVencida()) {
-            return 'CNH Vencida';
+            return 'CNH vencida';
         }
 
         return match ($this->status) {
-            'apto' => 'Apto para Conduzir',
-            'ferias' => 'Em Férias',
-            'afastado' => 'Licença / Afastado',
+            'apto' => 'Apto',
+            'ferias' => 'Em férias',
+            'afastado' => 'Afastado',
             'suspenso' => 'Suspenso',
-            default => ucfirst($this->status),
+            default => ucfirst((string) $this->status),
         };
+    }
+
+    /** Tom do badge SIGEM (info|ok|warn|danger|neutral). */
+    public function getStatusTomAttribute(): string
+    {
+        if ($this->isCnhVencida()) {
+            return 'danger';
+        }
+
+        return match ($this->status) {
+            'apto' => 'ok',
+            'afastado' => 'warn',
+            'suspenso' => 'danger',
+            default => 'neutral',
+        };
+    }
+
+    /** Pode ser escalado para uma saída agora (apto e CNH válida). */
+    public function podeConduzir(): bool
+    {
+        return $this->status === 'apto' && ! $this->isCnhVencida();
     }
 
     public function getStatusBadgeAttribute(): string

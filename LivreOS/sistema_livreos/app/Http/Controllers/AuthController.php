@@ -35,9 +35,6 @@ class AuthController extends Controller
             if ($redirect) {
                 return redirect($redirect);
             }
-            if ($user->is_admin) {
-                return redirect()->route('admin.dashboard');
-            }
             return redirect()->route('dashboard');
         }
 
@@ -64,6 +61,17 @@ class AuthController extends Controller
         ]);
 
         if (Auth::attempt($credentials, $request->filled('remember'))) {
+            if (! Auth::user()->ativo) {
+                $inativoId = Auth::id();
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+                $this->registrarAuditLogin($request, 'login_inactive', 'failed', 'Tentativa de login com usuário desativado.', ['user_id' => $inativoId]);
+
+                return back()->withErrors([
+                    'email' => 'Este usuário está desativado. Procure o setor de TI da Prefeitura.',
+                ])->onlyInput('email');
+            }
             RateLimiter::clear($this->throttleKey($request));
             $request->session()->regenerate();
             $user = Auth::user();
@@ -83,10 +91,6 @@ class AuthController extends Controller
             $loginRedirect = function_exists('apply_filters') ? apply_filters('auth.login.redirect', null, $user, $request) : null;
             if ($loginRedirect) {
                 return redirect()->to($intended ?: $loginRedirect);
-            }
-
-            if ($user->is_admin) {
-                return redirect()->to($intended ?: route('admin.dashboard'));
             }
 
             return redirect()->to($intended ?: route('dashboard'));

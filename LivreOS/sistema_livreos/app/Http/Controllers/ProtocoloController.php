@@ -32,7 +32,7 @@ class ProtocoloController extends Controller
             return false;
         }
 
-        if ($user->is_admin || $user->hasRole('admin') || $user->hasRole('manager') || $user->hasPermission('protocolo.sigiloso')) {
+        if ($user->ehGestorGeral() || $user->hasPermission('protocolo.sigiloso')) {
             return true;
         }
 
@@ -50,7 +50,7 @@ class ProtocoloController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        $canViewAllSigilosos = $user && ($user->is_admin || $user->hasRole('admin') || $user->hasRole('manager') || $user->hasPermission('protocolo.sigiloso'));
+        $canViewAllSigilosos = $user && ($user->ehGestorGeral() || $user->hasPermission('protocolo.sigiloso'));
 
         $query = Processo::with(['interessado', 'unidadeAtual', 'usuarioResponsavel'])
             ->latest('id');
@@ -67,6 +67,24 @@ class ProtocoloController extends Controller
                 }
             });
         }
+
+        // Recorte rápido (abas)
+        $unidadeId = $user?->unidade_administrativa_id;
+        $recortes = [
+            'secretaria' => fn ($q) => $q->where('unidade_atual_id', $unidadeId ?: 0)->whereIn('status', ['tramitando', 'suspenso']),
+            'comigo' => fn ($q) => $q->where('usuario_responsavel_id', $user?->id ?: 0)->whereIn('status', ['tramitando', 'suspenso']),
+            'atrasados' => fn ($q) => $q->whereIn('status', ['tramitando', 'suspenso'])->whereNotNull('data_limite')->whereDate('data_limite', '<', now()->toDateString()),
+            'andamento' => fn ($q) => $q->whereIn('status', ['tramitando', 'suspenso']),
+            'todos' => fn ($q) => $q,
+        ];
+        $padrao = $unidadeId ? 'secretaria' : 'andamento';
+        $recorte = array_key_exists($request->input('recorte'), $recortes) ? $request->input('recorte') : $padrao;
+        $baseVisivel = clone $query;
+        $contagens = [];
+        foreach ($recortes as $chave => $fn) {
+            $contagens[$chave] = $fn(clone $baseVisivel)->count();
+        }
+        $recortes[$recorte]($query);
 
         if ($request->filled('busca')) {
             $busca = $request->input('busca');
@@ -95,31 +113,40 @@ class ProtocoloController extends Controller
             $query->where('unidade_atual_id', $request->input('unidade_id'));
         }
 
-        $processos = $query->paginate(15)->withQueryString();
-        $unidades = UnidadeAdministrativa::where('ativo', true)->orderBy('ordem')->orderBy('nome')->get();
+        $processos = $query->with(['tramitacoes' => fn ($t) => $t->where('status', 'enviado')])
+            ->paginate(20)->withQueryString();
+        $unidades = UnidadeAdministrativa::where('ativo', true)->orderBy('sigla')->orderBy('nome')->get();
 
-        // Contadores para os cards superiores
-        $totalTramitando = Processo::where('status', 'tramitando')->count();
-        $totalConcluidos = Processo::whereIn('status', ['deferido', 'indeferido', 'arquivado'])->count();
-        $totalUrgentes   = Processo::where('prioridade', 'urgente')->where('status', 'tramitando')->count();
+        $abas = [];
+        $rotulos = $unidadeId
+            ? ['secretaria' => 'Na minha secretaria', 'comigo' => 'Comigo', 'atrasados' => 'Atrasados', 'andamento' => 'Em andamento', 'todos' => 'Todos']
+            : ['andamento' => 'Em andamento', 'comigo' => 'Comigo', 'atrasados' => 'Atrasados', 'todos' => 'Todos'];
+        foreach ($rotulos as $chave => $rotulo) {
+            $abas[] = [
+                'name' => $rotulo,
+                'path' => route('protocolo.index', ['recorte' => $chave]),
+                'active' => $recorte === $chave,
+                'count' => $contagens[$chave],
+            ];
+        }
 
         return erp_view('protocolo.index', [
-            'title' => 'Protocolo Digital & Processos',
+            'title' => 'Protocolo',
             'processos' => $processos,
             'unidades' => $unidades,
-            'totalTramitando' => $totalTramitando,
-            'totalConcluidos' => $totalConcluidos,
-            'totalUrgentes' => $totalUrgentes,
+            'abas' => $abas,
+            'recorte' => $recorte,
+            'filtrosAtivos' => $request->hasAny(['busca', 'status', 'prioridade', 'unidade_id']) && collect($request->only(['busca', 'status', 'prioridade', 'unidade_id']))->filter()->isNotEmpty(),
         ]);
     }
 
     public function create()
     {
         $unidades = UnidadeAdministrativa::where('ativo', true)->orderBy('ordem')->orderBy('nome')->get();
-        $cidadaos = Cliente::whereNull('deleted_at')->orderBy('nome')->limit(100)->get();
+        $cidadaos = Cliente::whereNull('deleted_at')->orderBy('nome')->limit(1000)->get(['id', 'nome', 'razao_social', 'cpf', 'cnpj', 'tipo_pessoa']);
 
         return erp_view('protocolo.create', [
-            'title' => 'Autuar Novo Processo Digital',
+            'title' => 'Autuar processo',
             'unidades' => $unidades,
             'cidadaos' => $cidadaos,
         ]);
@@ -252,10 +279,17 @@ class ProtocoloController extends Controller
             ->orderBy('nome')
             ->get();
 
+        $user = auth()->user();
+        $lotadoAqui = $user->lotadoEm($processo->unidade_atual_id) || $user->is_admin || $user->hasRole('admin');
+
         return erp_view('protocolo.show', [
-            'title' => "Processo nº {$processo->numero}",
+            'title' => "Processo {$processo->numero}",
             'processo' => $processo,
             'unidades' => $unidades,
+            'aguardaRecebimento' => $processo->aguardaRecebimento(),
+            'pendente' => $processo->tramitacaoPendente(),
+            'podeAgir' => $lotadoAqui,
+            'podeAnexar' => ! $processo->estaEncerrado() && ($user->ehGestorGeral() || $user->lotadoEm($processo->unidade_atual_id) || (int) $processo->created_by === (int) $user->id),
         ]);
     }
 
@@ -280,7 +314,7 @@ class ProtocoloController extends Controller
         }
 
         $validated = $request->validate([
-            'unidade_destino_id' => 'required|exists:unidades_administrativas,id|different:unidade_atual_id',
+            'unidade_destino_id' => 'required|integer|exists:unidades_administrativas,id|not_in:' . (int) $processo->unidade_atual_id,
             'despacho' => 'required|string|min:5',
             'parecer_tipo' => 'required|in:favoravel,desfavoravel,informativo,diligencia',
         ]);
@@ -302,6 +336,11 @@ class ProtocoloController extends Controller
     public function receber(Processo $processo)
     {
         $user = auth()->user();
+
+        if (! $processo->aguardaRecebimento()) {
+            return redirect()->route('protocolo.show', $processo)
+                ->with('error', 'Não há envio pendente de recebimento para este processo.');
+        }
 
         $canReceber = (bool) $user->is_admin || $user->hasRole('admin') ||
             ($user->unidade_administrativa_id && $user->unidade_administrativa_id === $processo->unidade_atual_id);
@@ -357,6 +396,19 @@ class ProtocoloController extends Controller
      */
     public function anexarDocumento(Request $request, Processo $processo)
     {
+        $user = auth()->user();
+        if ($processo->estaEncerrado()) {
+            return redirect()->route('protocolo.show', $processo)
+                ->with('error', 'Processo encerrado não recebe novos documentos.');
+        }
+        $podeAnexar = $user->ehGestorGeral()
+            || $user->lotadoEm($processo->unidade_atual_id)
+            || (int) $processo->created_by === (int) $user->id;
+        if (! $podeAnexar) {
+            return redirect()->route('protocolo.show', $processo)
+                ->with('error', 'Apenas servidores lotados na unidade atual do processo podem anexar documentos.');
+        }
+
         $validated = $request->validate([
             'arquivo' => 'required|file|mimes:pdf,png,jpg,jpeg,webp,odt,docx,doc,txt,xls,xlsx,csv|max:20480',
             'titulo' => 'required|string|max:255',

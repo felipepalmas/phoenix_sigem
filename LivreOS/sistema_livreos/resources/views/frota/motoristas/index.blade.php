@@ -1,249 +1,145 @@
 {{--
  * Componente da aplicação Phoenix - SIGEM
- * Gestão e Credenciamento de Motoristas Oficiais do Município
+ * Frota — motoristas oficiais e validade da CNH (padrão SIGEM Clean)
  *
  * @license AGPL-3.0
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="space-y-6" x-data="{ modalNovoMotorista: false }">
+@php
+    $painelInicial = old('_painel', '');
+@endphp
 
-    <!-- Mensagens de Flash -->
-    @if(session('success'))
-        <div class="rounded-xl border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-700/60 dark:bg-emerald-900/20">
-            <div class="flex items-center gap-3">
-                <div class="rounded-lg bg-emerald-100 p-2 text-emerald-800 dark:bg-emerald-800/40 dark:text-emerald-300">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                </div>
-                <p class="text-sm font-semibold text-emerald-900 dark:text-emerald-200">{{ session('success') }}</p>
-            </div>
-        </div>
+<div x-data="{ painel: @js($painelInicial) }">
+<x-sigem.page-header title="Motoristas" subtitle="Servidores credenciados para conduzir veículos da frota e validade da CNH">
+    @if($podeGerenciar)
+        <x-slot:actions>
+            <x-sigem.button variant="primary" @click="painel = painel === 'motorista' ? '' : 'motorista'" ::aria-expanded="painel === 'motorista'">
+                <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                Credenciar motorista
+            </x-sigem.button>
+        </x-slot:actions>
     @endif
+</x-sigem.page-header>
 
-    <!-- Header dos Motoristas Oficiais -->
-    <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-                <nav class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    <a href="{{ route('frota.index') }}" class="hover:text-brand-600 transition">Frota Municipal</a>
-                    <span>/</span>
-                    <span class="text-gray-900 dark:text-white font-semibold">Motoristas Oficiais</span>
-                </nav>
-                <h1 class="text-2xl font-extrabold text-gray-900 dark:text-white sm:text-3xl">
-                    Motoristas & Condutores Oficiais
-                </h1>
-                <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                    Controle de habilitação (CNH), validades, cursos de capacitação (SAMU, Transporte Escolar, MOPP) e conformidade legal.
-                </p>
-            </div>
+<x-sigem.flash />
 
-            <div class="flex flex-wrap items-center gap-2.5">
-                <a href="{{ route('frota.index') }}" class="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition">
-                    ← Garagem Central
-                </a>
-                <button type="button" @click="modalNovoMotorista = true" class="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-purple-700 transition">
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-                    Credenciar Motorista
-                </button>
-            </div>
+@include('frota.partials.alerta-cnh', ['alertasCnh' => $alertasCnh, 'linkMotoristas' => false])
+
+@if($podeGerenciar)
+<form x-show="painel === 'motorista'" x-cloak method="POST" action="{{ route('frota.motoristas.store') }}" class="sigem-card mb-5 border-sigem-primary">
+    @csrf
+    <input type="hidden" name="_painel" value="motorista">
+    <div class="sigem-card-header">
+        <div class="min-w-0 flex-1">
+            <h2 class="sigem-card-title">Credenciar motorista</h2>
+            <p class="m-0 mt-0.5 text-[13px] text-sigem-muted dark:text-gray-400">O motorista precisa ter usuário ativo no SIGEM. Ele entra como apto a conduzir.</p>
         </div>
     </div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        @if($usuariosDisponiveis->isEmpty())
+            <div class="sigem-alert sigem-alert-info" role="status"><span>Todos os usuários ativos já estão credenciados como motoristas. Cadastre o servidor em Administração › Usuários primeiro.</span></div>
+        @endif
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <x-sigem.field label="Servidor" for="user_id" required class="md:col-span-2">
+                <select id="user_id" name="user_id" required class="sigem-input">
+                    <option value="">Selecione o servidor</option>
+                    @foreach($usuariosDisponiveis as $u)
+                        <option value="{{ $u->id }}" @selected((string) old('user_id') === (string) $u->id)>{{ $u->name }}{{ $u->cargo ? ' — ' . $u->cargo : '' }}</option>
+                    @endforeach
+                </select>
+            </x-sigem.field>
+            <x-sigem.field label="Nº de registro da CNH" for="cnh_numero" required>
+                <input id="cnh_numero" name="cnh_numero" type="text" required maxlength="30" inputmode="numeric" value="{{ old('cnh_numero') }}" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Categoria" for="cnh_categoria" required help="Ambulância e ônibus exigem D; carreta, E.">
+                <select id="cnh_categoria" name="cnh_categoria" required class="sigem-input">
+                    @foreach(['B', 'AB', 'C', 'AC', 'D', 'AD', 'E', 'AE'] as $cat)
+                        <option value="{{ $cat }}" @selected(old('cnh_categoria', 'D') === $cat)>{{ $cat }}</option>
+                    @endforeach
+                </select>
+            </x-sigem.field>
+            <x-sigem.field label="Validade da CNH" for="cnh_validade" required>
+                <input id="cnh_validade" name="cnh_validade" type="date" required value="{{ old('cnh_validade') }}" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Observações" for="observacoes" class="md:col-span-2 lg:col-span-3">
+                <input id="observacoes" name="observacoes" type="text" value="{{ old('observacoes') }}" class="sigem-input">
+            </x-sigem.field>
+        </div>
+        <fieldset class="m-0 border-0 p-0">
+            <legend class="sigem-label">Cursos especializados (CONTRAN)</legend>
+            <div class="flex flex-wrap gap-x-5 gap-y-2">
+                @foreach(\App\Models\Motorista::CURSOS as $valor => $rotulo)
+                    <label for="curso_{{ $valor }}" class="flex cursor-pointer items-center gap-2 text-sm">
+                        <input id="curso_{{ $valor }}" type="checkbox" name="cursos_obrigatorios[]" value="{{ $valor }}" @checked(in_array($valor, (array) old('cursos_obrigatorios', []), true))> {{ $rotulo }}
+                    </label>
+                @endforeach
+            </div>
+        </fieldset>
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Credenciar motorista</x-sigem.button>
+        </div>
+    </div>
+</form>
+@endif
 
-    <!-- Lista de Motoristas Oficiais -->
-    <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-        @forelse($motoristas as $motorista)
-            @php
-                $diasValidade = $motorista->cnh_validade ? now()->diffInDays($motorista->cnh_validade, false) : null;
-                $vencida = $diasValidade !== null && $diasValidade < 0;
-                $vencendo = $diasValidade !== null && $diasValidade >= 0 && $diasValidade <= 30;
-            @endphp
-            <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800 flex flex-col justify-between">
-                <div>
-                    <!-- Topo do Card -->
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="flex items-center gap-3">
-                            <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-100 font-bold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
-                                {{ strtoupper(substr($motorista->user->name ?? 'M', 0, 2)) }}
-                            </div>
-                            <div>
-                                <h3 class="text-sm font-bold text-gray-900 dark:text-white">
-                                    {{ $motorista->user->name ?? 'Usuário' }}
-                                </h3>
-                                <p class="text-xs text-gray-500 dark:text-gray-400">{{ $motorista->user->email ?? '' }}</p>
-                            </div>
-                        </div>
-
-                        <!-- Categoria CNH Badge -->
-                        <span class="inline-flex items-center rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-black text-purple-800 dark:border-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
-                            CAT {{ $motorista->cnh_categoria }}
-                        </span>
-                    </div>
-
-                    <!-- Dados da CNH -->
-                    <div class="rounded-xl bg-gray-50 p-3 dark:bg-gray-700/40 space-y-1.5 text-xs">
-                        <div class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Nº da CNH:</span>
-                            <span class="font-mono font-bold text-gray-900 dark:text-white">{{ $motorista->cnh_numero }}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-gray-500 dark:text-gray-400">Validade CNH:</span>
-                            <div>
-                                <span class="font-bold text-gray-900 dark:text-white">{{ $motorista->cnh_validade ? $motorista->cnh_validade->format('d/m/Y') : '--' }}</span>
-                                @if($vencida)
-                                    <span class="ml-1 inline-flex items-center rounded bg-red-100 px-1.5 py-0.2 text-[10px] font-bold text-red-800 dark:bg-red-900/50 dark:text-red-300">
-                                        VENCIDA
-                                    </span>
-                                @elseif($vencendo)
-                                    <span class="ml-1 inline-flex items-center rounded bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
-                                        Expira em {{ $diasValidade }}d
-                                    </span>
-                                @endif
-                            </div>
-                        </div>
-                        <div class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Status Operacional:</span>
-                            <span class="font-bold {{ $motorista->status === 'apto' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600' }}">
-                                {{ ucfirst($motorista->status) }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Cursos e Certificações Obrigatórias -->
-                    <div class="mt-4">
-                        <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400 block mb-2">Cursos & Especializações:</span>
-                        @if(!empty($motorista->cursos_obrigatorios) && is_array($motorista->cursos_obrigatorios))
-                            <div class="flex flex-wrap gap-1.5">
-                                @foreach($motorista->cursos_obrigatorios as $curso)
-                                    <span class="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                                        ✓ {{ $curso }}
-                                    </span>
-                                @endforeach
-                            </div>
-                        @else
-                            <span class="text-[11px] text-gray-400 italic">Nenhum curso complementar cadastrado</span>
+<div class="sigem-card">
+    @if($motoristas->isEmpty())
+        <x-sigem.empty title="Nenhum motorista credenciado" description="Credencie os servidores habilitados para que possam ser escalados nas saídas do diário de bordo.">
+            @if($podeGerenciar)<x-sigem.button variant="primary" @click="painel = 'motorista'">Credenciar motorista</x-sigem.button>@endif
+        </x-sigem.empty>
+    @else
+        <x-sigem.table min-width="820px">
+            <x-slot:head>
+                <th scope="col">Motorista</th>
+                <th scope="col">CNH</th>
+                <th scope="col">Validade</th>
+                <th scope="col">Cursos</th>
+                <th scope="col">Situação</th>
+            </x-slot:head>
+            @foreach($motoristas as $m)
+                @php $dias = $m->dias_para_vencer_cnh; @endphp
+                <tr>
+                    <td>
+                        <div class="font-semibold">{{ $m->nome }}</div>
+                        @if($m->user?->cargo || $m->user?->email)<div class="sigem-muted">{{ $m->user->cargo ?: $m->user->email }}</div>@endif
+                    </td>
+                    <td class="whitespace-nowrap">
+                        Categoria {{ $m->cnh_categoria }}
+                        <div class="sigem-muted tabular-nums">{{ $m->cnh_numero }}</div>
+                    </td>
+                    <td class="whitespace-nowrap">
+                        {{ $m->cnh_validade?->format('d/m/Y') ?? '—' }}
+                        @if($dias !== null && $dias < 0)
+                            <div class="text-xs font-semibold text-sigem-danger dark:text-red-400">Vencida há {{ abs($dias) }} {{ abs($dias) === 1 ? 'dia' : 'dias' }}</div>
+                        @elseif($dias !== null && $dias <= 30)
+                            <div class="text-xs font-semibold text-sigem-warn dark:text-amber-300">{{ $dias === 0 ? 'Vence hoje' : 'Vence em ' . $dias . ($dias === 1 ? ' dia' : ' dias') }}</div>
                         @endif
-                    </div>
-                </div>
-
-                <!-- Rodapé do Card com Viagens Realizadas -->
-                <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs">
-                    <span class="text-gray-500">Missões registradas:</span>
-                    <span class="font-bold text-gray-900 dark:text-white">{{ $motorista->viagens()->count() }} viagens</span>
-                </div>
-            </div>
-        @empty
-            <div class="col-span-full rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-                <p class="text-sm font-semibold text-gray-500">Nenhum motorista oficial credenciado no sistema.</p>
-            </div>
-        @endforelse
-    </div>
-
-    @if($motoristas->hasPages())
-        <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-            {{ $motoristas->links() }}
+                    </td>
+                    <td class="max-w-[260px]">
+                        @if($m->cursos_formatados)
+                            <div class="truncate sigem-muted" title="{{ implode(', ', $m->cursos_formatados) }}">{{ implode(', ', $m->cursos_formatados) }}</div>
+                        @else
+                            <span class="sigem-muted">—</span>
+                        @endif
+                    </td>
+                    <td class="whitespace-nowrap">
+                        <x-sigem.status :tom="$m->status_tom">{{ $m->status_formatado }}</x-sigem.status>
+                        @if($m->viagens_em_andamento_count > 0)<div class="sigem-muted mt-1">Em viagem agora</div>@endif
+                    </td>
+                </tr>
+            @endforeach
+        </x-sigem.table>
+        <div class="flex flex-wrap items-center gap-2 border-t border-sigem-line px-4 py-3 text-[13px] text-sigem-muted dark:border-gray-800 dark:text-gray-400">
+            <span class="flex-1">Mostrando {{ $motoristas->firstItem() }}–{{ $motoristas->lastItem() }} de {{ $motoristas->total() }}</span>
+            @if($motoristas->hasPages())
+                <x-sigem.button size="sm" :href="$motoristas->previousPageUrl()" :class="$motoristas->onFirstPage() ? 'pointer-events-none opacity-50' : ''">Anterior</x-sigem.button>
+                <x-sigem.button size="sm" :href="$motoristas->nextPageUrl()" :class="$motoristas->hasMorePages() ? '' : 'pointer-events-none opacity-50'">Próxima</x-sigem.button>
+            @endif
         </div>
     @endif
-
-    <!-- Modal Alpine: Credenciar Novo Motorista -->
-    <div x-show="modalNovoMotorista" x-cloak class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
-        <div class="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800" @click.away="modalNovoMotorista = false">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-700">
-                <div class="flex items-center gap-3">
-                    <div class="rounded-xl bg-purple-100 p-2 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="text-base font-bold text-gray-900 dark:text-white">Credenciar Condutor Oficial</h3>
-                        <p class="text-xs text-gray-500">Vincule um servidor do sistema com suas credenciais de trânsito.</p>
-                    </div>
-                </div>
-                <button type="button" @click="modalNovoMotorista = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-
-            <form action="{{ route('frota.motoristas.store') }}" method="POST" class="mt-5 space-y-4">
-                @csrf
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Servidor / Usuário do Sistema <span class="text-red-500">*</span>
-                    </label>
-                    <select name="user_id" required class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                        <option value="">Selecione o servidor...</option>
-                        @foreach($usuariosDisponiveis as $user)
-                            <option value="{{ $user->id }}">{{ $user->name }} ({{ $user->email }})</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="col-span-2">
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Número da CNH <span class="text-red-500">*</span>
-                        </label>
-                        <input type="text" name="cnh_numero" placeholder="Ex: 01234567890" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-mono text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Categoria <span class="text-red-500">*</span>
-                        </label>
-                        <select name="cnh_categoria" required class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                            <option value="B">B</option>
-                            <option value="AB">AB</option>
-                            <option value="C">C</option>
-                            <option value="D">D</option>
-                            <option value="E">E</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Data de Validade da CNH <span class="text-red-500">*</span>
-                    </label>
-                    <input type="date" name="cnh_validade" required
-                        class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                </div>
-
-                <!-- Cursos e Certificações -->
-                <div>
-                    <span class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Cursos de Especialização Válidos
-                    </span>
-                    <div class="grid grid-cols-2 gap-2 text-xs">
-                        <label class="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <input type="checkbox" name="cursos_obrigatorios[]" value="Transporte de Emergência (SAMU)" class="rounded text-purple-600">
-                            <span>Transporte de Emergência (SAMU)</span>
-                        </label>
-                        <label class="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <input type="checkbox" name="cursos_obrigatorios[]" value="Transporte Escolar" class="rounded text-purple-600">
-                            <span>Transporte Escolar</span>
-                        </label>
-                        <label class="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <input type="checkbox" name="cursos_obrigatorios[]" value="Cargas Perigosas (MOPP)" class="rounded text-purple-600">
-                            <span>Cargas Perigosas (MOPP)</span>
-                        </label>
-                        <label class="flex items-center gap-2 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <input type="checkbox" name="cursos_obrigatorios[]" value="Operador de Máquinas Pesadas" class="rounded text-purple-600">
-                            <span>Operador de Máquinas Pesadas</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                    <button type="button" @click="modalNovoMotorista = false" class="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
-                        Cancelar
-                    </button>
-                    <button type="submit" class="rounded-xl bg-purple-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-purple-700">
-                        Confirmar Credenciamento
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
+</div>
 </div>
 @endsection

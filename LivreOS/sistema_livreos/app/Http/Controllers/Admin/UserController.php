@@ -42,11 +42,34 @@ class UserController extends Controller
     public function create()
     {
         $roles = Role::orderBy('name')->get();
+        $unidades = \App\Models\UnidadeAdministrativa::where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'sigla']);
         $viewData = function_exists('apply_filters') ? apply_filters('admin.users.create.data', [
             'title' => 'Criar Usuário',
             'roles' => $roles,
-        ]) : ['title' => 'Criar Usuário', 'roles' => $roles];
+            'unidades' => $unidades,
+        ]) : ['title' => 'Criar Usuário', 'roles' => $roles, 'unidades' => $unidades];
         return erp_view('admin.users.create', $viewData);
+    }
+
+    /**
+     * Quem não é gestor geral (ex.: chefia com manage-users) não pode conceder o papel "admin",
+     * nem mexer em lotação ou nos próprios papéis — senão escaparia do escopo da sua secretaria.
+     */
+    protected function papeisPermitidos(array $roleIds): array
+    {
+        if (auth()->user()->ehGestorGeral()) {
+            return $roleIds;
+        }
+        $adminId = \App\Models\Role::where('slug', 'admin')->value('id');
+
+        return array_values(array_filter($roleIds, fn ($id) => (int) $id !== (int) $adminId));
+    }
+
+    protected function protegerGestorGeral(User $alvo): void
+    {
+        if (! auth()->user()->ehGestorGeral() && $alvo->ehGestorGeral()) {
+            abort(403, 'Somente um administrador pode alterar a conta de outro administrador.');
+        }
     }
 
     public function store(Request $request)
@@ -67,6 +90,7 @@ class UserController extends Controller
             'telefone' => 'nullable|string|max:20',
             'cargo' => 'nullable|string|max:100',
             'departamento' => 'nullable|string|max:100',
+            'unidade_administrativa_id' => 'nullable|integer|exists:unidades_administrativas,id',
             'custo_hora_tecnica' => 'nullable|numeric|min:0',
             'cep' => 'nullable|string|max:10',
             'logradouro' => 'nullable|string|max:255',
@@ -81,6 +105,10 @@ class UserController extends Controller
 
         // Apenas administradores podem criar usuário como admin; demais sempre criam como não-admin
         $isAdmin = auth()->user()->is_admin && $request->boolean('is_admin');
+        if (! auth()->user()->ehGestorGeral()) {
+            // Chefia só cadastra servidores na própria secretaria
+            $request->merge(['unidade_administrativa_id' => auth()->user()->unidade_administrativa_id]);
+        }
 
         $createData = [
             'name' => $validated['name'],
@@ -93,6 +121,7 @@ class UserController extends Controller
             'telefone' => $request->input('telefone'),
             'cargo' => $request->input('cargo'),
             'departamento' => $request->input('departamento'),
+            'unidade_administrativa_id' => $request->filled('unidade_administrativa_id') ? (int) $request->input('unidade_administrativa_id') : null,
             'custo_hora_tecnica' => $request->filled('custo_hora_tecnica') ? $request->input('custo_hora_tecnica') : null,
             'cep' => $request->input('cep'),
             'logradouro' => $request->input('logradouro'),
@@ -108,7 +137,7 @@ class UserController extends Controller
         $user->save();
 
         if ($request->has('roles')) {
-            $user->roles()->sync($request->roles);
+            $user->roles()->sync($this->papeisPermitidos((array) $request->roles));
         }
 
         if (function_exists('do_action')) {
@@ -121,17 +150,26 @@ class UserController extends Controller
 
     public function edit(User $user)
     {
+        $this->protegerGestorGeral($user);
         $roles = Role::orderBy('name')->get();
+        $unidades = \App\Models\UnidadeAdministrativa::where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'sigla']);
         $viewData = function_exists('apply_filters') ? apply_filters('admin.users.edit.data', [
             'title' => 'Editar Usuário',
             'user' => $user,
             'roles' => $roles,
-        ], $user) : ['title' => 'Editar Usuário', 'user' => $user, 'roles' => $roles];
+            'unidades' => $unidades,
+        ], $user) : ['title' => 'Editar Usuário', 'user' => $user, 'roles' => $roles, 'unidades' => $unidades];
         return erp_view('admin.users.edit', $viewData);
     }
 
     public function update(Request $request, User $user)
     {
+        $this->protegerGestorGeral($user);
+        $editorGestor = auth()->user()->ehGestorGeral();
+        if (! $editorGestor) {
+            // Lotação só é alterada pelo administrador
+            $request->merge(['unidade_administrativa_id' => $user->unidade_administrativa_id]);
+        }
         if ($request->filled('cpf')) {
             $request->merge(['cpf' => $this->normalizarCpf($request->input('cpf'))]);
         }
@@ -148,6 +186,7 @@ class UserController extends Controller
             'telefone' => 'nullable|string|max:20',
             'cargo' => 'nullable|string|max:100',
             'departamento' => 'nullable|string|max:100',
+            'unidade_administrativa_id' => 'nullable|integer|exists:unidades_administrativas,id',
             'custo_hora_tecnica' => 'nullable|numeric|min:0',
             'cep' => 'nullable|string|max:10',
             'logradouro' => 'nullable|string|max:255',
@@ -171,6 +210,7 @@ class UserController extends Controller
             'telefone' => $request->input('telefone'),
             'cargo' => $request->input('cargo'),
             'departamento' => $request->input('departamento'),
+            'unidade_administrativa_id' => $request->filled('unidade_administrativa_id') ? (int) $request->input('unidade_administrativa_id') : null,
             'custo_hora_tecnica' => $request->filled('custo_hora_tecnica') ? $request->input('custo_hora_tecnica') : null,
             'cep' => $request->input('cep'),
             'logradouro' => $request->input('logradouro'),
@@ -192,10 +232,26 @@ class UserController extends Controller
             $user->update(['password' => bcrypt($validated['password'])]);
         }
 
-        if ($request->has('roles')) {
-            $user->roles()->sync($request->roles);
-        } else {
-            $user->roles()->detach();
+        $editandoASiMesmo = (int) $user->id === (int) auth()->id();
+        if ($editorGestor || ! $editandoASiMesmo) {
+            if ($request->has('roles')) {
+                $novos = $this->papeisPermitidos((array) $request->roles);
+                if (! $editorGestor) {
+                    // Preserva o papel admin que a chefia não pode conceder nem retirar
+                    $adminId = \App\Models\Role::where('slug', 'admin')->value('id');
+                    if ($adminId && $user->roles()->where('roles.id', $adminId)->exists()) {
+                        $novos[] = $adminId;
+                    }
+                }
+                $user->roles()->sync($novos);
+            } elseif ($editorGestor) {
+                $user->roles()->detach();
+            }
+        }
+
+        // Desativar encerra sessões "manter conectado"
+        if (! $user->ativo) {
+            $user->forceFill(['remember_token' => \Illuminate\Support\Str::random(60)])->save();
         }
 
         if (function_exists('do_action')) {
@@ -212,6 +268,8 @@ class UserController extends Controller
             return redirect()->route('admin.users.index')
                 ->with('error', 'Você não pode excluir seu próprio usuário!');
         }
+
+        $this->protegerGestorGeral($user);
 
         if (!$auditService->canExcluir(auth()->user(), 'usuario')) {
             abort(403, 'Você não tem permissão para excluir usuários.');

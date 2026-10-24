@@ -1,98 +1,89 @@
 {{--
- * Componente da aplicação LivreOS
+ * Componente da aplicação Phoenix - SIGEM
+ * Almoxarifado — locais de estoque (padrão SIGEM Clean)
  *
  * @author    viniciusvams
  * @copyright 2024-2026 LivreOS
  * @license   https://www.gnu.org/licenses/agpl-3.0.txt AGPL-3.0
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="mb-6 flex items-center justify-between">
-    <div>
-        <h1 class="mb-2 text-2xl font-semibold text-gray-800 dark:text-white/90">Almoxarifados Setoriais</h1>
-        <p class="text-gray-600 dark:text-gray-400">Locais de estocagem, depósito e distribuição de materiais municipais</p>
-    </div>
-    <a href="{{ route('depositos.create') }}" class="rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600">Novo Almoxarifado</a>
-</div>
+<x-sigem.page-header title="Almoxarifados" subtitle="Locais de estoque e distribuição de materiais, cada um ligado à secretaria que o administra">
+    <x-slot:actions>
+        <x-sigem.button variant="primary" href="{{ route('depositos.create') }}">
+            <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Novo almoxarifado
+        </x-sigem.button>
+    </x-slot:actions>
+</x-sigem.page-header>
 
-@if(session('success'))
-<div class="mb-4 rounded-lg bg-success-100 px-4 py-3 text-sm text-success-700 dark:bg-success-500/20 dark:text-success-400">
-    {{ session('success') }}
-</div>
-@endif
-
-<div class="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-    <form method="GET" class="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <input type="text" name="nome" placeholder="Buscar por nome ou código" value="{{ request('nome') }}" class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-800 focus:border-brand-500 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
-        <button type="submit" class="rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600">Filtrar</button>
-    </form>
-</div>
+<x-sigem.flash />
 
 @if(function_exists('do_action'))
 <?php do_action('entity.index.before_table', 'deposito'); ?>
 @endif
 
-<div class="rounded-lg border border-gray-200 bg-white shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-    <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-left text-sm">
-            <thead class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+<div class="sigem-card">
+    <form method="GET" action="{{ route('depositos.index') }}" class="flex flex-wrap gap-2.5 p-3">
+        <label for="d-nome" class="sr-only">Buscar por nome</label>
+        <input id="d-nome" type="search" name="nome" value="{{ request('nome') }}" placeholder="Nome do almoxarifado" class="sigem-input min-w-0 flex-[1_1_280px]">
+        <x-sigem.button type="submit">Buscar</x-sigem.button>
+        @if(request()->filled('nome'))
+            <x-sigem.button variant="ghost" href="{{ route('depositos.index') }}">Limpar</x-sigem.button>
+        @endif
+    </form>
+
+    @if($depositos->isEmpty())
+        <x-sigem.empty title="Nenhum almoxarifado encontrado"
+            :description="request()->filled('nome') ? 'Nenhum almoxarifado corresponde à busca.' : 'Cadastre o primeiro local de estoque para receber entradas e atender requisições.'">
+            @unless(request()->filled('nome'))<x-sigem.button variant="primary" href="{{ route('depositos.create') }}">Novo almoxarifado</x-sigem.button>@endunless
+        </x-sigem.empty>
+    @else
+        <x-sigem.table min-width="760px">
+            <x-slot:head>
+                <th scope="col">Almoxarifado</th>
+                <th scope="col">Localização</th>
+                <th scope="col">Secretaria responsável</th>
+                <th scope="col">Situação</th>
+                <th scope="col"><span class="sr-only">Ações</span></th>
+            </x-slot:head>
+            @foreach($depositos as $deposito)
                 <tr>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Código / Nome</th>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Localização</th>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Secretaria Vinculada</th>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($depositos as $deposito)
-                <tr class="border-b border-gray-200 dark:border-gray-700">
-                    <td class="px-4 py-3">
-                        <span class="font-bold text-gray-800 dark:text-white/90">{{ $deposito->nome }}</span>
-                        @if($deposito->codigo)
-                        <span class="block text-xs text-gray-400">Cód: {{ $deposito->codigo }}</span>
+                    <td>
+                        <a href="{{ route('depositos.edit', $deposito) }}" class="sigem-link">{{ $deposito->nome }}</a>
+                        @if($deposito->codigo)<div class="text-[13px] text-sigem-muted dark:text-gray-400">Código {{ $deposito->codigo }}</div>@endif
+                    </td>
+                    <td><div class="max-w-[260px] truncate" title="{{ $deposito->localizacao }}">{{ $deposito->localizacao ?: '—' }}</div></td>
+                    <td>
+                        @if($deposito->unidadeAdministrativa)
+                            <span title="{{ $deposito->unidadeAdministrativa->nome }}">{{ $deposito->unidadeAdministrativa->sigla ?: $deposito->unidadeAdministrativa->nome }}</span>
+                        @else
+                            <span class="text-sigem-muted dark:text-gray-400">Geral (sem secretaria)</span>
                         @endif
                     </td>
-                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400">{{ $deposito->localizacao ?: '-' }}</td>
-                    <td class="px-4 py-3 text-gray-600 dark:text-gray-400">
-                        {{ $deposito->unidadeAdministrativa?->sigla ? '['.$deposito->unidadeAdministrativa->sigla.'] ' : '' }}
-                        {{ $deposito->unidadeAdministrativa?->nome ?: 'Geral / Central' }}
-                    </td>
-                    <td class="px-4 py-3">
-                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold {{ $deposito->ativo ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' }}">
-                            {{ $deposito->ativo ? 'Ativo' : 'Inativo' }}
-                        </span>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="flex gap-2">
-                            <a href="{{ route('depositos.edit', $deposito) }}" class="text-brand-500 hover:underline">Editar</a>
-                            <form action="{{ route('depositos.destroy', $deposito) }}" method="POST" onsubmit="return confirm('Tem certeza que deseja excluir este almoxarifado?')">
+                    <td><x-sigem.status :tom="$deposito->ativo ? 'ok' : 'neutral'">{{ $deposito->ativo ? 'Ativo' : 'Inativo' }}</x-sigem.status></td>
+                    <td class="whitespace-nowrap text-right">
+                        <div class="inline-flex gap-1.5">
+                            <x-sigem.button size="sm" variant="ghost" href="{{ route('depositos.edit', $deposito) }}" aria-label="Editar {{ $deposito->nome }}">Editar</x-sigem.button>
+                            <form action="{{ route('depositos.destroy', $deposito) }}" method="POST" onsubmit="return confirm('Excluir o almoxarifado {{ addslashes($deposito->nome) }}? Esta ação não pode ser desfeita.')">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="text-error-500 hover:underline">Excluir</button>
+                                <x-sigem.button size="sm" variant="danger" type="submit" aria-label="Excluir {{ $deposito->nome }}">Excluir</x-sigem.button>
                             </form>
                         </div>
                     </td>
                 </tr>
-                @empty
-                <tr>
-                    <td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">Nenhum almoxarifado encontrado</td>
-                </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
-
-    <div class="p-4">
-        {{ $depositos->links() }}
-    </div>
+            @endforeach
+        </x-sigem.table>
+        <div class="flex flex-wrap items-center gap-2 border-t border-sigem-line px-4 py-3 text-[13px] text-sigem-muted dark:border-gray-800 dark:text-gray-400">
+            <span class="flex-1">Mostrando {{ $depositos->firstItem() }}–{{ $depositos->lastItem() }} de {{ $depositos->total() }} {{ $depositos->total() === 1 ? 'almoxarifado' : 'almoxarifados' }}</span>
+            @if($depositos->hasPages())
+                <x-sigem.button size="sm" :href="$depositos->appends(request()->query())->previousPageUrl()" :class="$depositos->onFirstPage() ? 'pointer-events-none opacity-50' : ''">Anterior</x-sigem.button>
+                <x-sigem.button size="sm" :href="$depositos->appends(request()->query())->nextPageUrl()" :class="$depositos->hasMorePages() ? '' : 'pointer-events-none opacity-50'">Próxima</x-sigem.button>
+            @endif
+        </div>
+    @endif
 </div>
 
 @if(function_exists('do_action'))

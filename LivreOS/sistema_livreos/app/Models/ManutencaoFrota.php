@@ -68,10 +68,30 @@ class ManutencaoFrota extends Model
     {
         return match ($this->status) {
             'agendada' => 'Agendada',
-            'em_execucao' => 'Na Oficina / Em Execução',
-            'concluida' => 'Concluída / Liberado',
+            'em_execucao' => 'Na oficina',
+            'concluida' => 'Concluída',
             'cancelada' => 'Cancelada',
-            default => ucfirst($this->status),
+            default => ucfirst(str_replace('_', ' ', (string) $this->status)),
+        };
+    }
+
+    /** Tom do badge SIGEM (info|ok|warn|danger|neutral). */
+    public function getStatusTomAttribute(): string
+    {
+        return match ($this->status) {
+            'agendada' => 'warn',
+            'em_execucao' => 'info',
+            'concluida' => 'ok',
+            default => 'neutral',
+        };
+    }
+
+    public function getTipoFormatadoAttribute(): string
+    {
+        return match ($this->tipo) {
+            'preventiva' => 'Preventiva',
+            'corretiva' => 'Corretiva',
+            default => ucfirst(str_replace('_', ' ', (string) $this->tipo)),
         };
     }
 

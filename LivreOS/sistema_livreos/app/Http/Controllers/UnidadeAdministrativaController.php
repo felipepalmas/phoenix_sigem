@@ -21,7 +21,7 @@ class UnidadeAdministrativaController extends Controller
     public function index(Request $request)
     {
         $query = UnidadeAdministrativa::with(['parent', 'responsavel'])
-            ->withCount('processosAtuais')
+            ->withCount(['processosAtuais', 'servidores'])
             ->orderBy('ordem')
             ->orderBy('nome');
 
@@ -44,7 +44,7 @@ class UnidadeAdministrativaController extends Controller
 
         $unidades = $query->paginate(15)->withQueryString();
 
-        return view('secretarias.index', compact('unidades'));
+        return erp_view('secretarias.index', ['title' => 'Secretarias', 'unidades' => $unidades]);
     }
 
     /**
@@ -59,7 +59,7 @@ class UnidadeAdministrativaController extends Controller
 
         $usuarios = User::where('ativo', true)->orderBy('name')->get();
 
-        return view('secretarias.create', compact('unidadesPai', 'usuarios'));
+        return erp_view('secretarias.create', ['title' => 'Nova secretaria ou setor', 'unidadesPai' => $unidadesPai, 'usuarios' => $usuarios]);
     }
 
     /**
@@ -103,7 +103,8 @@ class UnidadeAdministrativaController extends Controller
 
         $usuarios = User::where('ativo', true)->orderBy('name')->get();
 
-        return view('secretarias.edit', [
+        return erp_view('secretarias.edit', [
+            'title' => 'Editar ' . ($secretaria->sigla ?: $secretaria->nome),
             'unidade' => $secretaria,
             'unidadesPai' => $unidadesPai,
             'usuarios' => $usuarios,
@@ -160,8 +161,21 @@ class UnidadeAdministrativaController extends Controller
                 ->with('error', "Não é possível excluir a unidade \"{$secretaria->nome_completo}\" pois existem processos administrativos tramitando nela no momento.");
         }
 
+        $temHistorico = \App\Models\Tramitacao::where('unidade_origem_id', $secretaria->id)->orWhere('unidade_destino_id', $secretaria->id)->exists()
+            || \App\Models\RequisicaoMaterial::where('unidade_solicitante_id', $secretaria->id)->exists()
+            || $secretaria->servidores()->exists();
+        if ($temHistorico) {
+            return redirect()->back()
+                ->with('error', "A unidade \"{$secretaria->nome_completo}\" tem histórico (tramitações, requisições ou servidores lotados) e não pode ser excluída. Desative-a para que deixe de aparecer nas listas.");
+        }
+
         $nome = $secretaria->nome_completo;
-        $secretaria->delete();
+        try {
+            $secretaria->delete();
+        } catch (\Illuminate\Database\QueryException $e) {
+            return redirect()->back()
+                ->with('error', "A unidade \"{$nome}\" está vinculada a outros registros e não pode ser excluída. Desative-a em vez de excluir.");
+        }
 
         return redirect()->route('secretarias.index')
             ->with('success', "Unidade Administrativa \"{$nome}\" excluída com sucesso.");

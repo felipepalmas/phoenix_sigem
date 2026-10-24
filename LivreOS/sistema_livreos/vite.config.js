@@ -14,9 +14,10 @@
 import { defineConfig, loadEnv } from 'vite';
 import laravel from 'laravel-vite-plugin';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
-    const base = env.VITE_BASE || '/';
+    // No build os arquivos ficam em public/build: as URLs geradas (imagens do CSS/JS) precisam do prefixo /build/.
+    const base = env.VITE_BASE || (command === 'build' ? '/build/' : '/');
 
     return {
         base,

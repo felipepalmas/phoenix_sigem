@@ -56,17 +56,7 @@ class RequisicaoMaterial extends Model
                 $ano = $requisicao->ano ?: (int) date('Y');
                 $requisicao->ano = $ano;
                 
-                $maxSeq = 0;
-                $todasReqsDoAno = self::where('ano', $ano)->pluck('numero');
-                foreach ($todasReqsDoAno as $num) {
-                    if (preg_match('/REQ-\d+\/(\d+)/', $num, $matches)) {
-                        $seq = (int) $matches[1];
-                        if ($seq > $maxSeq) {
-                            $maxSeq = $seq;
-                        }
-                    }
-                }
-                $proximo = $maxSeq + 1;
+                $proximo = \App\Support\Numerador::proximo('REQ', $ano, fn (int $a) => \App\Support\Numerador::maiorSufixo('requisicoes_materiais', 'numero', "REQ-{$a}/"));
                 $requisicao->numero = sprintf('REQ-%04d/%05d', $ano, $proximo);
             }
         });
@@ -142,17 +132,56 @@ class RequisicaoMaterial extends Model
     }
 
     /**
-     * Aprova a requisição pela chefia da unidade solicitante
+     * Unidade administrativa dona do almoxarifado (depósito) desta requisição.
+     */
+    protected function unidadeDoAlmoxarifado(): ?int
+    {
+        return $this->almoxarifado?->unidade_administrativa_id;
+    }
+
+    public function podeSerAprovadaPor(?User $user): bool
+    {
+        return $user !== null
+            && $this->situacao === 'pendente_aprovacao'
+            && ((int) $this->solicitante_user_id !== (int) $user->id || $user->is_admin)
+            && $user->podeNaUnidade('almoxarifado.aprovar', $this->unidade_solicitante_id);
+    }
+
+    public function podeSerAtendidaPor(?User $user): bool
+    {
+        if ($user === null || ! in_array($this->situacao, ['aprovada', 'atendida_parcial'], true)) {
+            return false;
+        }
+        $unidade = $this->unidadeDoAlmoxarifado();
+        if ($unidade === null) {
+            return $user->ehGestorGeral() || $user->hasPermission('almoxarifado.atender');
+        }
+
+        return $user->podeNaUnidade('almoxarifado.atender', $unidade);
+    }
+
+    public function podeTerRecebimentoConfirmadoPor(?User $user): bool
+    {
+        return $user !== null
+            && in_array($this->situacao, ['atendida', 'atendida_parcial'], true)
+            && ((int) $this->solicitante_user_id === (int) $user->id
+                || $user->lotadoEm($this->unidade_solicitante_id)
+                || $user->ehGestorGeral());
+    }
+
+    /**
+     * Aprova a requisição (chefia da secretaria solicitante).
      */
     public function aprovar(User $user, ?string $parecer = null): void
     {
         if ($this->situacao !== 'pendente_aprovacao') {
             throw new \DomainException("Esta requisição já foi processada (situação: '{$this->situacao_formatada}') e não pode ser aprovada novamente.");
         }
-
-        // Segregação de funções: solicitante não pode aprovar o próprio pedido, exceto superadmin
-        if ($this->solicitante_user_id === $user->id && ! $user->is_admin) {
-            throw new \DomainException("Princípio da Segregação de Funções: O servidor solicitante não pode aprovar a sua própria requisição de materiais.");
+        if ((int) $this->solicitante_user_id === (int) $user->id && ! $user->is_admin) {
+            throw new \DomainException('Segregação de funções: o servidor solicitante não pode aprovar a própria requisição.');
+        }
+        if (! $user->podeNaUnidade('almoxarifado.aprovar', $this->unidade_solicitante_id)) {
+            throw new \DomainException('Somente a chefia da secretaria solicitante (lotada nela e com permissão de aprovar) pode aprovar esta requisição.');
         }
 
         $this->update([
@@ -164,12 +193,15 @@ class RequisicaoMaterial extends Model
     }
 
     /**
-     * Recusa a requisição
+     * Recusa a requisição.
      */
     public function recusar(User $user, string $motivo): void
     {
         if ($this->situacao !== 'pendente_aprovacao') {
             throw new \DomainException("Esta requisição já foi processada (situação: '{$this->situacao_formatada}').");
+        }
+        if (! $user->podeNaUnidade('almoxarifado.aprovar', $this->unidade_solicitante_id)) {
+            throw new \DomainException('Somente a chefia da secretaria solicitante pode recusar esta requisição.');
         }
 
         $this->update([
@@ -181,62 +213,73 @@ class RequisicaoMaterial extends Model
     }
 
     /**
-     * Atende a requisição e baixa os itens do estoque do almoxarifado
-     * 
-     * @param User $almoxarife
-     * @param array $itensAtendidos [item_id => quantidade_atendida]
-     * @param string|null $observacoes
+     * Quantidade ainda pendente de entrega para um item.
+     */
+    public static function pendenteDoItem(RequisicaoMaterialItem $item): float
+    {
+        return max(0, round((float) $item->quantidade_solicitada - (float) $item->quantidade_atendida, 6));
+    }
+
+    /**
+     * Atende (total ou parcialmente) e baixa os itens do estoque.
+     *
+     * Cada atendimento entrega no máximo o que AINDA FALTA de cada item; a quantidade
+     * atendida é acumulada. Um item não informado não é entregue nesta rodada.
+     *
+     * @param  array  $itensAtendidos  [item_id => quantidade entregue AGORA]
      */
     public function atender(User $almoxarife, array $itensAtendidos, ?string $observacoes = null): void
     {
-        if (! in_array($this->situacao, ['aprovada', 'atendida_parcial'])) {
-            throw new \DomainException("A requisição precisa estar aprovada para ser atendida pelo almoxarifado (situação atual: '{$this->situacao_formatada}').");
+        if (! in_array($this->situacao, ['aprovada', 'atendida_parcial'], true)) {
+            throw new \DomainException("A requisição precisa estar aprovada para ser atendida (situação atual: '{$this->situacao_formatada}').");
+        }
+        if (! $this->podeSerAtendidaPor($almoxarife)) {
+            throw new \DomainException('Somente o almoxarife da secretaria dona deste almoxarifado pode atender a requisição.');
         }
 
         DB::transaction(function () use ($almoxarife, $itensAtendidos, $observacoes) {
-            $totalSolicitado = 0;
-            $totalAtendido = 0;
+            $entregueAgora = 0.0;
+            $aindaFalta = 0.0;
 
-            foreach ($this->itens as $item) {
-                $solicitada = (float) $item->quantidade_solicitada;
-                $totalSolicitado += $solicitada;
+            foreach ($this->itens()->lockForUpdate()->get() as $item) {
+                $pendente = self::pendenteDoItem($item);
+                $qtd = isset($itensAtendidos[$item->id]) ? round((float) $itensAtendidos[$item->id], 6) : 0.0;
 
-                $qtdAtender = isset($itensAtendidos[$item->id]) ? (float) $itensAtendidos[$item->id] : $solicitada;
-                
-                if ($qtdAtender > 0) {
-                    if ($qtdAtender > $solicitada) {
-                        throw new \DomainException("A quantidade atendida ({$qtdAtender}) não pode exceder a quantidade solicitada ({$solicitada}) para o item '{$item->produto?->nome}'.");
-                    }
+                if ($qtd < 0) {
+                    throw new \DomainException("Quantidade inválida para o item '{$item->produto?->nome}'.");
+                }
+                if ($qtd > $pendente + 0.000001) {
+                    throw new \DomainException("O item '{$item->produto?->nome}' tem apenas {$pendente} pendente(s); não é possível entregar {$qtd}.");
+                }
 
-                    // Checa saldo do produto
-                    $produto = Produto::lockForUpdate()->find($item->produto_id);
-                    if ($produto && (float) $produto->estoque_quantidade < $qtdAtender) {
-                        throw new \DomainException("Saldo insuficiente em estoque para o produto '{$produto->nome}'. Disponível: {$produto->estoque_quantidade}, Necessário: {$qtdAtender}.");
-                    }
-
-                    $item->quantidade_atendida = $qtdAtender;
-                    $item->save();
-                    $totalAtendido += $qtdAtender;
-
-                    // Baixa no estoque
+                if ($qtd > 0) {
+                    // MovimentacaoEstoque::registrar trava o produto e recusa saldo insuficiente
                     MovimentacaoEstoque::registrar(
                         produtoId: $item->produto_id,
                         depositoId: $this->almoxarifado_id,
                         tipo: 'saida',
-                        quantidade: $qtdAtender,
+                        quantidade: $qtd,
                         origemTipo: 'requisicao',
                         origemId: $this->id,
                         documentoRef: $this->numero,
                         userId: $almoxarife->id,
                         justificativa: "Atendimento da Requisição {$this->numero} para {$this->unidadeSolicitante?->nome}"
                     );
+
+                    $item->quantidade_atendida = round((float) $item->quantidade_atendida + $qtd, 6);
+                    $item->save();
+                    $entregueAgora += $qtd;
                 }
+
+                $aindaFalta += self::pendenteDoItem($item);
             }
 
-            $novaSituacao = ($totalAtendido >= $totalSolicitado) ? 'atendida' : 'atendida_parcial';
+            if ($entregueAgora <= 0) {
+                throw new \DomainException('Informe a quantidade entregue de pelo menos um item.');
+            }
 
             $this->update([
-                'situacao'                => $novaSituacao,
+                'situacao'                => $aindaFalta > 0 ? 'atendida_parcial' : 'atendida',
                 'atendido_por_user_id'    => $almoxarife->id,
                 'atendido_em'             => now(),
                 'observacoes_atendimento' => $observacoes,
@@ -245,12 +288,15 @@ class RequisicaoMaterial extends Model
     }
 
     /**
-     * Confirma recebimento pelo solicitante
+     * Confirma o recebimento pelo solicitante (ou pela secretaria solicitante).
      */
     public function confirmarRecebimento(User $user): void
     {
-        if (! in_array($this->situacao, ['atendida', 'atendida_parcial'])) {
-            throw new \DomainException("Apenas requisições já atendidas ou separadas podem ter o recebimento confirmado.");
+        if (! in_array($this->situacao, ['atendida', 'atendida_parcial'], true)) {
+            throw new \DomainException('Apenas requisições já atendidas podem ter o recebimento confirmado.');
+        }
+        if (! $this->podeTerRecebimentoConfirmadoPor($user)) {
+            throw new \DomainException('Somente o solicitante ou um servidor da secretaria solicitante pode confirmar o recebimento.');
         }
 
         $this->update([

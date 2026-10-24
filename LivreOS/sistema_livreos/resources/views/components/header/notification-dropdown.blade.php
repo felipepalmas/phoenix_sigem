@@ -64,12 +64,12 @@
 
     <!-- Notification Button -->
     <button
-        class="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-dark-900 h-11 w-11 hover:bg-gray-100 hover:text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+        class="relative flex h-9 w-9 items-center justify-center rounded-md text-sigem-muted transition-colors hover:bg-sigem-neutral-soft hover:text-sigem-ink dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white"
         @click="toggleDropdown()"
-        type="button"
+        type="button" aria-label="Avisos"
     >
         <!-- Badge com contagem -->
-        <span x-show="notifying" class="absolute -right-0.5 -top-0.5 z-10 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-0.5 text-[10px] font-bold text-white leading-none">
+        <span x-show="notifying" class="absolute -right-0.5 -top-0.5 z-10 flex h-4 min-w-4 items-center justify-center rounded-full bg-sigem-danger px-0.5 text-[10px] font-bold text-white leading-none">
             <span x-text="count > 9 ? '9+' : count"></span>
             <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-60"></span>
         </span>

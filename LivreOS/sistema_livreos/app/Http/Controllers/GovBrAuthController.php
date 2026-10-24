@@ -142,6 +142,10 @@ class GovBrAuthController extends Controller
             // 1. Identificação de servidor público: EXCLUSIVAMENTE por CPF cadastrado (nunca por e-mail isolado)
             $user = User::where('cpf', $cpf)->first();
 
+            if ($user && ! $user->ativo) {
+                return redirect()->route('login')->with('error', 'Seu usuário está desativado. Procure o setor de TI da Prefeitura.');
+            }
+
             if ($user) {
                 Auth::login($user);
                 $request->session()->regenerate(); // Prevenção contra session fixation

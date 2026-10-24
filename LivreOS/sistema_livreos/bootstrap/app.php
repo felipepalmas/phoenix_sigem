@@ -51,6 +51,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
             $aliases = array_merge($aliases, apply_filters('middleware.aliases', []));
         }
         $middleware->alias($aliases);
+        $middleware->appendToGroup('web', \App\Http\Middleware\EncerrarSessaoDeUsuarioInativo::class);
         $middleware->redirectGuestsTo(fn () => route('signin'));
         // Permite acesso pelo IP da máquina (ex.: http://192.168.x.x/erp/) em ambiente local / Laragon.
         // Não usar app()->environment() aqui: nessa fase o container ainda não tem o binding 'env' (erro ao acessar por subpasta).

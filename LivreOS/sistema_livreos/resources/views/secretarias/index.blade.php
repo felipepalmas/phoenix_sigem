@@ -1,150 +1,90 @@
 {{--
  * Componente da aplicação Phoenix - SIGEM
- * Módulo de Secretarias e Estrutura Organizacional Municipal
+ * Secretarias e setores (estrutura administrativa) — padrão SIGEM Clean
  *
  * @license AGPL-3.0
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-    <div>
-        <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Secretarias e Departamentos Municipais</h1>
-        <p class="text-sm text-gray-600 dark:text-gray-400">Estrutura administrativa oficial da Prefeitura Municipal (Secretarias, Gabinete e Setores)</p>
-    </div>
-    <a href="{{ route('secretarias.create') }}" class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 transition">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        Nova Secretaria / Unidade
-    </a>
-</div>
+@php $tipos = ['gabinete' => 'Gabinete', 'secretaria' => 'Secretaria', 'departamento' => 'Departamento', 'divisao' => 'Divisão', 'setor' => 'Setor']; @endphp
+@php $podeGerenciar = (bool) auth()->user()->is_admin; @endphp
+<x-sigem.page-header title="Secretarias" subtitle="Estrutura administrativa usada no Protocolo, Almoxarifado, Frota, Zeladoria e na lotação dos servidores">
+    <x-slot:actions>
+        @if($podeGerenciar)
+        <x-sigem.button variant="primary" href="{{ route('secretarias.create') }}">
+            <svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Nova secretaria ou setor
+        </x-sigem.button>
+        @endif
+    </x-slot:actions>
+</x-sigem.page-header>
 
-@if(session('success'))
-<div class="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300">
-    {{ session('success') }}
-</div>
-@endif
+<x-sigem.flash />
 
-@if(session('error'))
-<div class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
-    {{ session('error') }}
-</div>
-@endif
-
-<!-- Filtros de Busca -->
-<div class="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-    <form method="GET" action="{{ route('secretarias.index') }}" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="lg:col-span-2">
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Buscar por sigla, nome ou e-mail</label>
-            <input type="text" name="busca" value="{{ request('busca') }}" placeholder="Ex: SMAS, Saúde, obras@prefeitura.gov.br..." class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-        </div>
-        <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Tipo de Unidade</label>
-            <select name="tipo" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                <option value="">Todos os Tipos</option>
-                <option value="gabinete" {{ request('tipo') == 'gabinete' ? 'selected' : '' }}>Gabinete</option>
-                <option value="secretaria" {{ request('tipo') == 'secretaria' ? 'selected' : '' }}>Secretaria</option>
-                <option value="departamento" {{ request('tipo') == 'departamento' ? 'selected' : '' }}>Departamento</option>
-                <option value="divisao" {{ request('tipo') == 'divisao' ? 'selected' : '' }}>Divisão</option>
-                <option value="setor" {{ request('tipo') == 'setor' ? 'selected' : '' }}>Setor</option>
-            </select>
-        </div>
-        <div class="flex items-end gap-2">
-            <button type="submit" class="w-full rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-white hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 transition">Filtrar</button>
-            @if(request()->hasAny(['busca', 'tipo', 'ativo']))
-            <a href="{{ route('secretarias.index') }}" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300" title="Limpar">✕</a>
-            @endif
-        </div>
+<div class="sigem-card">
+    <form method="GET" action="{{ route('secretarias.index') }}" class="flex flex-wrap gap-2.5 p-3" x-data x-ref="f">
+        <label for="s-busca" class="sr-only">Buscar</label>
+        <input id="s-busca" type="search" name="busca" value="{{ request('busca') }}" placeholder="Nome, sigla ou e-mail" class="sigem-input min-w-0 flex-[1_1_260px]">
+        <label for="s-tipo" class="sr-only">Tipo</label>
+        <select id="s-tipo" name="tipo" class="sigem-input flex-[0_1_180px]" @change="$refs.f.submit()">
+            <option value="">Qualquer tipo</option>
+            @foreach($tipos as $v => $r)<option value="{{ $v }}" @selected(request('tipo') === $v)>{{ $r }}</option>@endforeach
+        </select>
+        <label for="s-ativo" class="sr-only">Situação</label>
+        <select id="s-ativo" name="ativo" class="sigem-input flex-[0_1_160px]" @change="$refs.f.submit()">
+            <option value="">Ativas e inativas</option>
+            <option value="1" @selected(request('ativo') === '1')>Somente ativas</option>
+            <option value="0" @selected(request('ativo') === '0')>Somente inativas</option>
+        </select>
+        <x-sigem.button type="submit">Buscar</x-sigem.button>
     </form>
-</div>
 
-<!-- Tabela de Secretarias -->
-<div class="rounded-xl border border-gray-200 bg-white shadow-theme-xs dark:border-gray-800 dark:bg-gray-800 overflow-hidden">
-    <div class="overflow-x-auto">
-        <table class="w-full">
-            <thead class="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+    @if($unidades->isEmpty())
+        <x-sigem.empty title="Nenhuma unidade encontrada" description="Cadastre as secretarias para poder lotar servidores e tramitar processos." />
+    @else
+        <x-sigem.table min-width="760px">
+            <x-slot:head>
+                <th scope="col">Unidade</th>
+                <th scope="col">Tipo</th>
+                <th scope="col">Responsável</th>
+                <th scope="col" class="text-right">Servidores</th>
+                <th scope="col" class="text-right">Processos</th>
+                <th scope="col">Situação</th>
+                <th scope="col"><span class="sr-only">Ações</span></th>
+            </x-slot:head>
+            @foreach($unidades as $u)
                 <tr>
-                    <th class="px-5 py-3.5">Sigla / Nome</th>
-                    <th class="px-5 py-3.5">Tipo / Subordinação</th>
-                    <th class="px-5 py-3.5">Responsável (Titular)</th>
-                    <th class="px-5 py-3.5">Contatos Oficiais</th>
-                    <th class="px-5 py-3.5 text-center">Processos Ativos</th>
-                    <th class="px-5 py-3.5 text-center">Situação</th>
-                    <th class="px-5 py-3.5 text-right">Ações</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-gray-700 text-sm">
-                @forelse($unidades as $unidade)
-                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
-                    <td class="px-5 py-3.5">
-                        <div class="font-bold text-gray-900 dark:text-white">
-                            @if($unidade->sigla)
-                                <span class="rounded bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand-700 dark:bg-brand-900/40 dark:text-brand-300 mr-1.5">{{ $unidade->sigla }}</span>
-                            @endif
-                            {{ $unidade->nome }}
-                        </div>
-                    </td>
-                    <td class="px-5 py-3.5 text-gray-600 dark:text-gray-300">
-                        <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium capitalize bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                            {{ $unidade->tipo }}
-                        </span>
-                        @if($unidade->parent)
-                            <div class="text-xs text-gray-400 mt-0.5">Subordinada a: {{ $unidade->parent->sigla ?: $unidade->parent->nome }}</div>
-                        @endif
-                    </td>
-                    <td class="px-5 py-3.5 text-gray-700 dark:text-gray-300">
-                        @if($unidade->responsavel)
-                            <div class="font-medium text-gray-900 dark:text-white">{{ $unidade->responsavel->name }}</div>
-                            <div class="text-xs text-gray-400">{{ $unidade->responsavel->email }}</div>
+                    <td>
+                        @if($podeGerenciar)
+                            <a href="{{ route('secretarias.edit', $u) }}" class="sigem-link">{{ $u->sigla ? $u->sigla . ' — ' : '' }}{{ $u->nome }}</a>
                         @else
-                            <span class="text-xs text-gray-400 italic">Não designado</span>
+                            <strong>{{ $u->sigla ? $u->sigla . ' — ' : '' }}{{ $u->nome }}</strong>
                         @endif
+                        @if($u->parent)<div class="sigem-muted">Subordinada a {{ $u->parent->sigla ?: $u->parent->nome }}</div>@endif
                     </td>
-                    <td class="px-5 py-3.5 text-gray-600 dark:text-gray-400 text-xs">
-                        @if($unidade->email)
-                            <div>📧 {{ $unidade->email }}</div>
-                        @endif
-                        @if($unidade->telefone)
-                            <div>📞 {{ $unidade->telefone }}</div>
-                        @endif
-                        @if(!$unidade->email && !$unidade->telefone)
-                            <span class="text-gray-400">—</span>
-                        @endif
-                    </td>
-                    <td class="px-5 py-3.5 text-center">
-                        @if($unidade->processos_atuais_count > 0)
-                            <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                                {{ $unidade->processos_atuais_count }} processos
-                            </span>
+                    <td>{{ $tipos[$u->tipo] ?? ucfirst($u->tipo) }}</td>
+                    <td>{{ $u->responsavel?->name ?? '—' }}</td>
+                    <td class="text-right">
+                        @if($u->servidores_count)
+                            {{ $u->servidores_count }}
                         @else
-                            <span class="text-xs text-gray-400">0</span>
+                            <span class="text-sigem-warn dark:text-amber-300" title="Sem servidores lotados: ninguém consegue receber processos aqui">0</span>
                         @endif
                     </td>
-                    <td class="px-5 py-3.5 text-center">
-                        <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $unidade->ativo ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' }}">
-                            {{ $unidade->ativo ? 'Ativa' : 'Inativa' }}
-                        </span>
-                    </td>
-                    <td class="px-5 py-3.5 text-right whitespace-nowrap">
-                        <a href="{{ route('secretarias.edit', $unidade) }}" class="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 mr-1">
-                            Editar
-                        </a>
+                    <td class="text-right">{{ $u->processos_atuais_count }}</td>
+                    <td><x-sigem.status :tom="$u->ativo ? 'ok' : 'neutral'">{{ $u->ativo ? 'Ativa' : 'Inativa' }}</x-sigem.status></td>
+                    <td class="text-right">
+                        @if($podeGerenciar)
+                            <x-sigem.button size="sm" href="{{ route('secretarias.edit', $u) }}">Editar</x-sigem.button>
+                        @endif
                     </td>
                 </tr>
-                @empty
-                <tr>
-                    <td colspan="7" class="px-5 py-10 text-center text-gray-500 dark:text-gray-400">
-                        Nenhuma secretaria ou departamento encontrado.
-                    </td>
-                </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
-    @if($unidades->hasPages())
-    <div class="border-t border-gray-200 px-5 py-4 dark:border-gray-700">
-        {{ $unidades->links() }}
-    </div>
+            @endforeach
+        </x-sigem.table>
+        @if($unidades->hasPages())
+            <div class="border-t border-sigem-line px-4 py-3 dark:border-gray-800">{{ $unidades->links() }}</div>
+        @endif
     @endif
 </div>
 @endsection

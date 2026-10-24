@@ -133,7 +133,7 @@ class FrotaSeeder extends Seeder
                 'patrimonio_tombamento' => 'PAT-FROTA-002',
                 'unidade_administrativa_id' => $semed?->id,
                 'km_atual' => 62100,
-                'status' => 'disponivel',
+                'status' => 'em_viagem',
                 'capacidade_tanque' => 150.00,
                 'capacidade_passageiros' => 31,
                 'observacoes' => 'Linha Escolar Rural 04 - Região dos Mananciais e Assentamento.',
@@ -169,7 +169,7 @@ class FrotaSeeder extends Seeder
                 'patrimonio_tombamento' => 'PAT-FROTA-004',
                 'unidade_administrativa_id' => $semosp?->id,
                 'km_atual' => 1240, // Horímetro em horas de uso
-                'status' => 'em_viagem',
+                'status' => 'disponivel',
                 'capacidade_tanque' => 130.00,
                 'capacidade_passageiros' => 1,
                 'observacoes' => 'Alocada na operação de desassoreamento e limpeza de bueiros e córregos.',

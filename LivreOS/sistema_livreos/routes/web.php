@@ -160,9 +160,8 @@ Route::get('/login', function () {
     return redirect()->route('signin');
 });
 
-Route::get('/signup', function () {
-    return erp_view('pages.auth.signup', ['title' => 'Sign Up']);
-})->name('signup');
+// Sistema interno: contas são criadas apenas pelo administrador (Admin › Usuários).
+Route::get('/signup', fn () => redirect()->route('signin'))->name('signup');
 
 // Execução de tarefas agendadas via URL (para servidor sem cron). Token em .env: CRON_SECRET_TOKEN
 Route::get('/run-tarefas', RunTarefasController::class)->name('run-tarefas');
@@ -233,11 +232,14 @@ Route::prefix('clientes')->name('clientes.')->middleware('operational')->group(f
 // Módulo Municipal: Secretarias e Departamentos / Setores
 Route::prefix('secretarias')->name('secretarias.')->middleware('operational')->group(function () {
     Route::get('/', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'index'])->name('index');
-    Route::get('/create', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'create'])->name('create');
-    Route::post('/', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'store'])->name('store');
-    Route::get('/{secretaria}/edit', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'edit'])->name('edit');
-    Route::put('/{secretaria}', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'update'])->name('update');
-    Route::delete('/{secretaria}', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'destroy'])->name('destroy');
+    // Alterar a estrutura administrativa é tarefa do administrador do sistema
+    Route::middleware('admin')->group(function () {
+        Route::get('/create', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'store'])->name('store');
+        Route::get('/{secretaria}/edit', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'edit'])->name('edit');
+        Route::put('/{secretaria}', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'update'])->name('update');
+        Route::delete('/{secretaria}', [\App\Http\Controllers\UnidadeAdministrativaController::class, 'destroy'])->name('destroy');
+    });
 });
 Route::prefix('centros-custo')->name('centros-custo.')->middleware('operational')->group(function () {
     Route::get('/', [CentroCustoController::class, 'index'])->name('index');
@@ -268,6 +270,7 @@ Route::prefix('zeladoria')->name('zeladoria.')->middleware('operational')->group
     Route::post('/', [\App\Http\Controllers\ZeladoriaController::class, 'store'])->name('store');
     Route::get('/{ordemServico}', [\App\Http\Controllers\ZeladoriaController::class, 'show'])->name('show');
     Route::post('/{ordemServico}/concluir', [\App\Http\Controllers\ZeladoriaController::class, 'concluir'])->name('concluir');
+    Route::post('/{ordemServico}/andamento', [\App\Http\Controllers\ZeladoriaController::class, 'andamento'])->name('andamento');
 });
 
 // Módulo C: Almoxarifado Setorial e Requisições de Materiais

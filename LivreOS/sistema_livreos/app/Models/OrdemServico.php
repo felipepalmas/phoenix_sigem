@@ -29,6 +29,7 @@ class OrdemServico extends Model
         'tenant_id',
         'numero_sequencial',
         'codigo_interno',
+        'chave_acesso',
         'cliente_id',
         'cliente_unidade_id',
         'contato_id',
@@ -383,5 +384,21 @@ class OrdemServico extends Model
     public function getTemCoordenadasAttribute(): bool
     {
         return !is_null($this->latitude) && !is_null($this->longitude);
+    }
+
+    /**
+     * Código oficial de demanda de zeladoria (ZEL-AAAA/NNNNN), sem corrida e sem
+     * colidir com a numeração das OS comuns.
+     */
+    public static function gerarCodigoZeladoria(?int $ano = null): string
+    {
+        $ano = $ano ?? (int) date('Y');
+        $numero = \App\Support\Numerador::proximo(
+            'ZEL',
+            $ano,
+            fn (int $a) => \App\Support\Numerador::maiorSufixo('ordem_servicos', 'codigo_interno', "ZEL-{$a}/")
+        );
+
+        return sprintf('ZEL-%d/%05d', $ano, $numero);
     }
 }

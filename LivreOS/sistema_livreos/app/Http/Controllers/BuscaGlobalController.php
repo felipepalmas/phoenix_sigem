@@ -95,7 +95,7 @@ class BuscaGlobalController extends Controller
                           ->whereNotIn('sigilo', ['sigiloso', 'restrito']);
                 } else {
                     $user = auth()->user();
-                    $canViewAllSigilosos = $perm['isAdmin'] || $perm['isManager'] || ($user && $user->hasPermission('protocolo.sigiloso'));
+                    $canViewAllSigilosos = $perm['isAdmin'] || ($user && $user->hasPermission('protocolo.sigiloso'));
                     if (! $canViewAllSigilosos) {
                         $qProc->where(function ($sig) use ($user) {
                             $sig->where('sigilo', 'publico');
@@ -251,7 +251,7 @@ class BuscaGlobalController extends Controller
                       ->whereNotIn('sigilo', ['sigiloso', 'restrito']);
             } else {
                 $user = auth()->user();
-                $canViewAllSigilosos = $perm['isAdmin'] || $perm['isManager'] || ($user && $user->hasPermission('protocolo.sigiloso'));
+                $canViewAllSigilosos = $perm['isAdmin'] || ($user && $user->hasPermission('protocolo.sigiloso'));
                 if (! $canViewAllSigilosos) {
                     $qProc->where(function ($sig) use ($user) {
                         $sig->where('sigilo', 'publico');
@@ -287,7 +287,7 @@ class BuscaGlobalController extends Controller
                             'id' => $p->id,
                             'title' => $p->numero,
                             'subtitle' => Str::limit($p->assunto, 45) . ($p->interessado ? ' • ' . $p->interessado->nome : ''),
-                            'badge' => ucfirst($p->status ?? 'Em Tramitação'),
+                            'badge' => $p->status_rotulo,
                             'badge_type' => $p->prioridade === 'urgente' ? 'danger' : 'info',
                             'url' => route('protocolo.show', $p->id),
                         ];
@@ -326,8 +326,8 @@ class BuscaGlobalController extends Controller
                             'id' => $z->id,
                             'title' => $z->codigo_interno ?: 'Demanda #' . $z->id,
                             'subtitle' => ($z->categoriaZeladoria?->nome ?: 'Demanda') . ' • ' . ($z->bairro ?: $z->logradouro ?: 'Sem local'),
-                            'badge' => ucfirst($z->status ?? 'Aberto'),
-                            'badge_type' => 'warning',
+                            'badge' => \App\Support\StatusZeladoria::rotulo($z->status),
+                            'badge_type' => ['ok' => 'success', 'warn' => 'warning', 'danger' => 'danger', 'neutral' => 'neutral'][\App\Support\StatusZeladoria::tom($z->status)] ?? 'info',
                             'url' => route('zeladoria.show', $z->id),
                         ];
                     })->values(),
@@ -356,7 +356,7 @@ class BuscaGlobalController extends Controller
                             'title' => $r->numero ?: 'Req. #' . $r->id,
                             'subtitle' => ($r->unidadeSolicitante?->sigla ?: 'Setor') . ' • ' . Str::limit($r->justificativa, 40),
                             'badge' => $r->situacao_formatada ?? ucfirst($r->situacao),
-                            'badge_type' => 'success',
+                            'badge_type' => 'info',
                             'url' => route('almoxarifado.requisicoes.show', $r->id),
                         ];
                     })->values(),

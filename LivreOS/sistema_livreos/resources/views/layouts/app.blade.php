@@ -19,7 +19,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>{{ $title ?? 'Dashboard' }} | {{ config('app.name') }}</title>
+    <title>{{ $title ?? 'Início' }} · Phoenix SIGEM</title>
     <link rel="icon" type="image/png" href="{{ asset('logo/icone.png') }}">
     <link rel="shortcut icon" href="{{ asset('favicon.ico') }}">
 
@@ -116,7 +116,7 @@
     <style>
         @media (max-width: 1279px) {
             #sidebar { transform: translateX(-100%); }
-            #sidebar.mobile-menu-open { transform: translateX(0) !important; width: min(290px, 85vw) !important; }
+            #sidebar.mobile-menu-open { transform: translateX(0) !important; width: min(280px, 85vw) !important; }
             /* Evita scroll do fundo quando o menu está aberto no celular; top é definido via JS para manter posição */
             html.mobile-menu-open, body.mobile-menu-open { overflow: hidden; height: 100%; }
             body.mobile-menu-open { position: fixed; width: 100%; left: 0; }
@@ -128,7 +128,7 @@
     @endif
 </head>
 
-<body
+<body class="bg-sigem-canvas text-sigem-ink dark:bg-gray-950 dark:text-gray-100"
     x-data="{ 'loaded': true}"
     x-init="$store.sidebar.isExpanded = window.innerWidth >= 1280;
     const checkMobile = () => {
@@ -145,6 +145,7 @@
         <?php do_action('layout.body.start'); ?>
     @endif
 
+    <a href="#conteudo" class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100002] focus:rounded-md focus:bg-white focus:px-3 focus:py-2 focus:shadow">Pular para o conteúdo</a>
     {{-- preloader --}}
     <x-common.preloader/>
     {{-- preloader end --}}
@@ -155,14 +156,18 @@
 
         <div class="flex min-h-screen min-w-0 flex-1 flex-col transition-all duration-300 ease-in-out"
             :class="{
-                'xl:ml-[290px]': $store.sidebar.isExpanded || $store.sidebar.isHovered,
-                'xl:ml-[90px]': !$store.sidebar.isExpanded && !$store.sidebar.isHovered,
+                'xl:ml-[248px]': $store.sidebar.isExpanded || $store.sidebar.isHovered,
+                'xl:ml-[72px]': !$store.sidebar.isExpanded && !$store.sidebar.isHovered,
                 'ml-0': $store.sidebar.isMobileOpen
             }">
             <!-- app header start -->
             @include('layouts.app-header')
             <!-- app header end -->
-            <div class="flex-1 min-w-0 w-full max-w-full p-4 mx-auto md:p-6 {{ !empty($fullWidth) ? '' : 'xl:max-w-[1536px]' }}">
+            <main id="conteudo" class="flex-1 min-w-0 w-full max-w-full px-4 py-5 mx-auto md:px-8 md:py-6 {{ !empty($fullWidth) ? '' : 'xl:max-w-[1320px]' }}">
+                @php $abasModulo = \App\Helpers\MenuHelper::getModuleTabs(); @endphp
+                @if(count($abasModulo))
+                    <x-sigem.tabs :items="$abasModulo" label="Seções do módulo" class="mb-5" />
+                @endif
                 @if(function_exists('get_admin_notices') && count($notices = get_admin_notices()) > 0)
                 <div class="mb-4 space-y-2">
                     @foreach($notices as $notice)
@@ -179,14 +184,11 @@
                 </div>
                 @endif
                 @yield('content')
-            </div>
-            <footer class="mt-auto border-t border-gray-200 py-4 dark:border-gray-700">
-                <p class="text-center text-sm text-gray-500 dark:text-gray-400">
-                    Phoenix - SIGEM — Sistema Integrado de Gestão Municipal
-                    -
-                    <a href="https://github.com/felipepalmas/phoenix_sigem" target="_blank" rel="noopener noreferrer" class="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 underline">
-                        Código Aberto (AGPL-3.0)
-                    </a>
+            </main>
+            <footer class="mt-auto border-t border-sigem-line px-4 py-3 dark:border-gray-800">
+                <p class="m-0 text-center text-xs text-sigem-muted dark:text-gray-500">
+                    Phoenix SIGEM · software livre sob
+                    <a href="https://github.com/felipepalmas/phoenix_sigem" target="_blank" rel="noopener noreferrer" class="text-sigem-muted underline hover:text-sigem-ink dark:text-gray-400">AGPL-3.0 (código-fonte)</a>
                 </p>
             </footer>
         </div>

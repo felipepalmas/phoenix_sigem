@@ -23,12 +23,50 @@ use Illuminate\Support\Facades\DB;
 class AlmoxarifadoController extends Controller
 {
     /**
-     * Listagem de Requisições de Materiais
+     * Listagem de Requisições de Materiais (recortes por aba, padrão SIGEM Clean)
      */
     public function indexRequisicoes(Request $request)
     {
-        $query = RequisicaoMaterial::with(['unidadeSolicitante', 'almoxarifado', 'solicitante', 'itens.produto'])
+        $user = auth()->user();
+        $unidadeId = $user?->unidade_administrativa_id;
+        $gestor = $user?->ehGestorGeral() ?? false;
+
+        $query = RequisicaoMaterial::with(['unidadeSolicitante', 'almoxarifado', 'solicitante'])
+            ->withCount('itens')
             ->latest('id');
+
+        // Recortes (abas). "Aguardando aprovação" e "Para atender" mostram o que cabe ao usuário.
+        $recortes = [
+            'secretaria' => fn ($q) => $q->where('unidade_solicitante_id', $unidadeId ?: 0)
+                ->whereIn('situacao', ['pendente_aprovacao', 'aprovada', 'atendida_parcial', 'atendida']),
+            'aprovacao' => function ($q) use ($gestor, $unidadeId) {
+                $q->where('situacao', 'pendente_aprovacao');
+                if (! $gestor) {
+                    $q->where('unidade_solicitante_id', $unidadeId ?: 0);
+                }
+
+                return $q;
+            },
+            'atender' => function ($q) use ($gestor, $unidadeId) {
+                $q->whereIn('situacao', ['aprovada', 'atendida_parcial']);
+                if (! $gestor) {
+                    $q->whereHas('almoxarifado', fn ($d) => $d->where(fn ($w) => $w->where('unidade_administrativa_id', $unidadeId ?: 0)
+                        ->orWhereNull('unidade_administrativa_id')));
+                }
+
+                return $q;
+            },
+            'concluidas' => fn ($q) => $q->where('situacao', 'concluida'),
+            'todas' => fn ($q) => $q,
+        ];
+        $padrao = $unidadeId ? 'secretaria' : 'todas';
+        $recorte = array_key_exists($request->input('recorte'), $recortes) ? $request->input('recorte') : $padrao;
+
+        $contagens = [];
+        foreach ($recortes as $chave => $fn) {
+            $contagens[$chave] = $fn(RequisicaoMaterial::query())->count();
+        }
+        $recortes[$recorte]($query);
 
         if ($request->filled('situacao')) {
             $query->where('situacao', $request->input('situacao'));
@@ -53,20 +91,40 @@ class AlmoxarifadoController extends Controller
             });
         }
 
-        $requisicoes = $query->paginate(15)->withQueryString();
+        $requisicoes = $query->paginate(20)->withQueryString();
 
-        $stats = [
-            'total'               => RequisicaoMaterial::count(),
-            'pendente_aprovacao'  => RequisicaoMaterial::where('situacao', 'pendente_aprovacao')->count(),
-            'aprovadas'           => RequisicaoMaterial::where('situacao', 'aprovada')->count(),
-            'atendidas'           => RequisicaoMaterial::whereIn('situacao', ['atendida', 'concluida'])->count(),
-            'materiais_criticos'  => Produto::whereRaw('estoque_quantidade <= estoque_minimo')->where('estoque_minimo', '>', 0)->count(),
-        ];
+        $rotulos = $unidadeId
+            ? ['secretaria' => 'Da minha secretaria', 'aprovacao' => 'Aguardando aprovação', 'atender' => 'Para atender', 'concluidas' => 'Concluídas', 'todas' => 'Todas']
+            : ['aprovacao' => 'Aguardando aprovação', 'atender' => 'Para atender', 'concluidas' => 'Concluídas', 'todas' => 'Todas'];
+        $abas = [];
+        foreach ($rotulos as $chave => $rotulo) {
+            $abas[] = [
+                'name' => $rotulo,
+                'path' => route('almoxarifado.requisicoes.index', ['recorte' => $chave]),
+                'active' => $recorte === $chave,
+                'count' => $contagens[$chave],
+            ];
+        }
+
+        $materiaisCriticos = Produto::whereNull('deleted_at')
+            ->where('estoque_minimo', '>', 0)
+            ->whereColumn('estoque_quantidade', '<=', 'estoque_minimo')
+            ->count();
 
         $unidades = UnidadeAdministrativa::where('ativo', true)->orderBy('nome')->get();
         $almoxarifados = Deposito::where('ativo', true)->orderBy('nome')->get();
+        $filtros = ['busca', 'situacao', 'unidade_id', 'almoxarifado_id'];
 
-        return view('almoxarifado.requisicoes.index', compact('requisicoes', 'stats', 'unidades', 'almoxarifados'));
+        return erp_view('almoxarifado.requisicoes.index', [
+            'title' => 'Requisições de materiais',
+            'requisicoes' => $requisicoes,
+            'abas' => $abas,
+            'recorte' => $recorte,
+            'unidades' => $unidades,
+            'almoxarifados' => $almoxarifados,
+            'materiaisCriticos' => $materiaisCriticos,
+            'filtrosAtivos' => collect($request->only($filtros))->filter(fn ($v) => $v !== null && $v !== '')->isNotEmpty(),
+        ]);
     }
 
     /**
@@ -80,12 +138,18 @@ class AlmoxarifadoController extends Controller
             ->orderBy('nome')
             ->get(['id', 'nome', 'codigo_sku', 'unidade', 'estoque_quantidade', 'estoque_minimo', 'estoque_deposito_id']);
 
-        $processos = Processo::whereNotIn('status', ['concluido', 'arquivado'])
+        $processos = Processo::visiveisPara(auth()->user())->whereNotIn('status', ['concluido', 'arquivado'])
             ->orderBy('id', 'desc')
             ->limit(30)
             ->get(['id', 'numero', 'assunto']);
 
-        return view('almoxarifado.requisicoes.create', compact('unidades', 'almoxarifados', 'materiais', 'processos'));
+        return erp_view('almoxarifado.requisicoes.create', [
+            'title' => 'Nova requisição de materiais',
+            'unidades' => $unidades,
+            'almoxarifados' => $almoxarifados,
+            'materiais' => $materiais,
+            'processos' => $processos,
+        ]);
     }
 
     /**
@@ -106,6 +170,14 @@ class AlmoxarifadoController extends Controller
             'itens.required'         => 'Adicione pelo menos um item à requisição de materiais.',
             'itens.*.quantidade.min' => 'A quantidade solicitada deve ser maior que zero.',
         ]);
+
+        // Servidor requisita em nome da própria secretaria; gestor geral pode requisitar por qualquer uma
+        $user = auth()->user();
+        if (! $user->ehGestorGeral() && ! $user->lotadoEm($validated['unidade_solicitante_id'])) {
+            return back()->withInput()->withErrors([
+                'unidade_solicitante_id' => 'Você só pode requisitar materiais em nome da secretaria em que está lotado(a).',
+            ]);
+        }
 
         $requisicao = DB::transaction(function () use ($validated, $request) {
             $user = auth()->user();
@@ -154,7 +226,26 @@ class AlmoxarifadoController extends Controller
             'itens.produto',
         ]);
 
-        return view('almoxarifado.requisicoes.show', compact('requisicao'));
+        $user = auth()->user();
+
+        // Entregas registradas no Kardex para esta requisição (cada atendimento parcial é um grupo)
+        $entregas = MovimentacaoEstoque::with(['produto', 'user'])
+            ->where('origem_tipo', 'requisicao')
+            ->where('origem_id', $requisicao->id)
+            ->where('tipo', 'saida')
+            ->orderBy('created_at')
+            ->get()
+            ->groupBy(fn ($m) => $m->created_at->format('Y-m-d H:i') . '#' . $m->user_id)
+            ->values();
+
+        return erp_view('almoxarifado.requisicoes.show', [
+            'title' => 'Requisição ' . $requisicao->numero,
+            'requisicao' => $requisicao,
+            'entregas' => $entregas,
+            'podeAprovar' => $requisicao->podeSerAprovadaPor($user),
+            'podeAtender' => $requisicao->podeSerAtendidaPor($user),
+            'podeConfirmar' => $requisicao->podeTerRecebimentoConfirmadoPor($user),
+        ]);
     }
 
     /**
@@ -170,7 +261,7 @@ class AlmoxarifadoController extends Controller
             $requisicao->aprovar(auth()->user(), $request->input('parecer'));
             return redirect()->back()->with('success', "Requisição {$requisicao->numero} aprovada com sucesso e encaminhada ao Almoxarifado para separação.");
         } catch (\DomainException $e) {
-            return redirect()->back()->with('error', $e->getMessage());
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
         }
     }
 
@@ -187,7 +278,7 @@ class AlmoxarifadoController extends Controller
             $requisicao->recusar(auth()->user(), $request->input('motivo'));
             return redirect()->back()->with('warning', "Requisição {$requisicao->numero} foi recusada.");
         } catch (\DomainException $e) {
-            return redirect()->back()->with('error', $e->getMessage());
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
         }
     }
 
@@ -198,6 +289,7 @@ class AlmoxarifadoController extends Controller
     {
         $request->validate([
             'itens'       => 'required|array',
+            'itens.*'     => 'nullable|numeric|min:0',
             'observacoes' => 'nullable|string|max:500',
         ]);
 
@@ -210,7 +302,7 @@ class AlmoxarifadoController extends Controller
             $requisicao->atender(auth()->user(), $itensAtendidos, $request->input('observacoes'));
             return redirect()->back()->with('success', "Requisição {$requisicao->numero} atendida! Materiais baixados do estoque e prontos para retirada.");
         } catch (\DomainException $e) {
-            return redirect()->back()->with('error', $e->getMessage());
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
         }
     }
 
@@ -223,7 +315,7 @@ class AlmoxarifadoController extends Controller
             $requisicao->confirmarRecebimento(auth()->user());
             return redirect()->back()->with('success', "Recebimento dos materiais confirmado com sucesso! Requisição concluída.");
         } catch (\DomainException $e) {
-            return redirect()->back()->with('error', $e->getMessage());
+            return redirect()->back()->withInput()->with('error', $e->getMessage());
         }
     }
 
@@ -260,17 +352,27 @@ class AlmoxarifadoController extends Controller
 
         $movimentacoes = $query->paginate(20)->withQueryString();
 
-        $stats = [
-            'total_movimentacoes' => MovimentacaoEstoque::count(),
-            'entradas'            => MovimentacaoEstoque::where('tipo', 'entrada')->count(),
-            'saidas'              => MovimentacaoEstoque::where('tipo', 'saida')->count(),
-            'total_itens'         => Produto::whereNull('deleted_at')->count(),
-        ];
+        $produtos = Produto::whereNull('deleted_at')->orderBy('nome')->get(['id', 'nome', 'codigo_sku', 'unidade', 'estoque_quantidade']);
+        $almoxarifados = Deposito::with('unidadeAdministrativa')->where('ativo', true)->orderBy('nome')->get();
 
-        $produtos = Produto::whereNull('deleted_at')->orderBy('nome')->get(['id', 'nome', 'codigo_sku']);
-        $almoxarifados = Deposito::where('ativo', true)->orderBy('nome')->get();
+        // Mesma regra de storeEntrada: almoxarife da secretaria dona do depósito (ou gestor geral)
+        $user = auth()->user();
+        $depositosEntrada = $almoxarifados->filter(fn ($d) => $d->unidade_administrativa_id
+            ? $user->podeNaUnidade('almoxarifado.atender', $d->unidade_administrativa_id)
+            : ($user->ehGestorGeral() || $user->hasPermission('almoxarifado.atender')))->values();
+        $podeRegistrar = ($user->ehGestorGeral() || $user->hasPermission('almoxarifado.atender')) && $depositosEntrada->isNotEmpty();
 
-        return view('almoxarifado.movimentacoes.index', compact('movimentacoes', 'stats', 'produtos', 'almoxarifados'));
+        $filtros = ['busca', 'tipo', 'deposito_id', 'produto_id'];
+
+        return erp_view('almoxarifado.movimentacoes.index', [
+            'title' => 'Kardex de estoque',
+            'movimentacoes' => $movimentacoes,
+            'produtos' => $produtos,
+            'almoxarifados' => $almoxarifados,
+            'depositosEntrada' => $depositosEntrada,
+            'podeRegistrar' => $podeRegistrar,
+            'filtrosAtivos' => collect($request->only($filtros))->filter(fn ($v) => $v !== null && $v !== '')->isNotEmpty(),
+        ]);
     }
 
     /**
@@ -285,6 +387,15 @@ class AlmoxarifadoController extends Controller
             'documento_ref' => 'required|string|max:100', // ex: Nota de Empenho nº 450/2026
             'justificativa' => 'nullable|string|max:500',
         ]);
+
+        $deposito = Deposito::findOrFail($validated['deposito_id']);
+        $user = auth()->user();
+        $podeRegistrar = $deposito->unidade_administrativa_id
+            ? $user->podeNaUnidade('almoxarifado.atender', $deposito->unidade_administrativa_id)
+            : ($user->ehGestorGeral() || $user->hasPermission('almoxarifado.atender'));
+        if (! $podeRegistrar) {
+            return redirect()->back()->withInput()->with('error', 'Somente o almoxarife da secretaria dona deste almoxarifado pode registrar entradas.');
+        }
 
         MovimentacaoEstoque::registrar(
             produtoId: (int) $validated['produto_id'],

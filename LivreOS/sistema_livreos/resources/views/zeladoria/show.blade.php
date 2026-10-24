@@ -1,274 +1,196 @@
 {{--
  * Componente da aplicação Phoenix - SIGEM
- * Módulo B: Zeladoria Urbana e Serviços Públicos Municipais
- * Detalhamento da Ocorrência, Mapa, Comparativo Antes/Depois e Atesto
+ * Zeladoria — detalhe da demanda: andamento, fotos antes/depois e atesto (padrão SIGEM Clean)
  *
  * @license AGPL-3.0
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-    <div>
-        <div class="flex items-center gap-2 text-sm text-gray-500 mb-1">
-            <a href="{{ route('zeladoria.index') }}" class="hover:underline">Zeladoria Municipal</a>
-            <span>/</span>
-            <span class="font-semibold text-gray-700 dark:text-gray-300">Demanda {{ $os->codigo_interno ?: '#' . $os->id }}</span>
-        </div>
-        <div class="flex flex-wrap items-center gap-3">
-            <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                {{ $os->codigo_interno ?: 'OS #' . $os->id }}
-            </h1>
-            @if($os->categoriaZeladoria)
-            <span class="inline-flex rounded-md px-3 py-1 text-xs font-bold {{ $os->categoriaZeladoria->badge_color }}">
-                {{ $os->categoriaZeladoria->nome }}
-            </span>
-            @endif
-            <span class="inline-flex rounded-full px-3 py-1 text-xs font-bold
-                {{ in_array($os->prioridade, ['urgente', 'emergencial']) ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' }}">
-                Prioridade: {{ ucfirst($os->prioridade) }}
-            </span>
-            <span class="inline-flex rounded-full px-3 py-1 text-xs font-bold
-                {{ str_contains($os->status, 'Concluída') ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' : (str_contains($os->status, 'Execução') ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300') }}">
-                {{ $os->status }}
-            </span>
-        </div>
-    </div>
+@php
+    use App\Support\StatusZeladoria;
+    $codigo = $os->codigo_interno ?: '#' . $os->id;
+    $abertura = $os->data_abertura ? \Carbon\Carbon::parse($os->data_abertura) : $os->created_at;
+    $previsao = $os->prevista_conclusao ? \Carbon\Carbon::parse($os->prevista_conclusao) : null;
+    $painelInicial = old('_painel', '');
+    $prio = mb_strtolower((string) $os->prioridade);
+    $origens = ['portal' => 'Portal do Cidadão', 'telefone_156' => 'Telefone 156', 'balcao' => 'Balcão', 'ouvidoria' => 'Ouvidoria', 'fiscalizacao' => 'Fiscalização', 'processo_protocolo' => 'Processo'];
+    $proximas = [
+        StatusZeladoria::PROGRAMADA => 'Programar',
+        StatusZeladoria::EM_EXECUCAO => 'Iniciar execução',
+        StatusZeladoria::AGUARDANDO_MATERIAL => 'Aguardando material',
+    ];
+@endphp
 
-    <!-- Ações Rápidas -->
-    <div class="flex flex-wrap items-center gap-2">
-        @if(!str_contains($os->status, 'Concluída'))
-        <button type="button" onclick="abrirModalConcluir()" class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 transition">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-            Concluir & Atestar Serviço
-        </button>
-        @else
-        <div class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Serviço Atestado e Concluído
-        </div>
+<div x-data="{ painel: @js($painelInicial) }">
+<x-sigem.page-header :title="'Demanda ' . $codigo" :subtitle="($os->categoriaZeladoria->nome ?? 'Zeladoria') . ' — ' . ($os->endereco_completo ?: 'local não informado')"
+    :breadcrumbs="['Zeladoria' => route('zeladoria.index'), $codigo => null]">
+    <x-slot:badges>
+        <x-sigem.status :tom="StatusZeladoria::tom($os->status)">{{ StatusZeladoria::rotulo($os->status) }}</x-sigem.status>
+        @if(in_array($prio, ['urgente', 'emergencial', 'alta'], true))<x-sigem.status tom="danger">{{ $prio === 'emergencial' ? 'Emergencial' : 'Urgente' }}</x-sigem.status>@endif
+    </x-slot:badges>
+    <x-slot:actions>
+        @if(!$encerrada && $podeOperar)
+            <x-sigem.button variant="primary" @click="painel = painel === 'concluir' ? '' : 'concluir'">Concluir com foto</x-sigem.button>
+            <x-sigem.button @click="painel = painel === 'andamento' ? '' : 'andamento'">Atualizar situação</x-sigem.button>
         @endif
-        <a href="{{ route('ordens-servico.show', $os) }}" class="rounded-lg border border-gray-300 bg-white px-3.5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" title="Ver ficha técnica de OS completa">
-            Ficha Completa
-        </a>
-    </div>
-</div>
+    </x-slot:actions>
+</x-sigem.page-header>
 
-@if(session('success'))
-<div class="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300">
-    {{ session('success') }}
-</div>
+<x-sigem.flash />
+
+@if(!$encerrada && !$podeOperar)
+    <div class="sigem-alert sigem-alert-info mb-4" role="status">
+        <span>Esta demanda é da <strong>{{ $os->secretariaResponsavel->nome ?? 'secretaria responsável' }}</strong>. Só servidores lotados nela (com permissão de zeladoria) podem atualizá-la.</span>
+    </div>
 @endif
 
-<!-- Banner de Integração com o Protocolo Digital (Módulo A) -->
-@if($os->processo)
-<div class="mb-6 rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-800 dark:bg-blue-900/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-bold">
-            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        </div>
-        <div>
-            <h4 class="text-sm font-bold text-blue-900 dark:text-blue-200">Vinculada ao Protocolo Digital nº {{ $os->processo->numero }}</h4>
-            <p class="text-xs text-blue-700 dark:text-blue-300">Esta ordem de serviço foi originada a partir de um processo administrativo oficial.</p>
+@if(!$encerrada && $podeOperar)
+<form x-show="painel === 'andamento'" x-cloak method="POST" action="{{ route('zeladoria.andamento', $os) }}" class="sigem-card mb-5 border-sigem-primary">
+    @csrf
+    <input type="hidden" name="_painel" value="andamento">
+    <div class="sigem-card-header"><h2 class="sigem-card-title">Atualizar situação</h2></div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        <fieldset class="m-0 border-0 p-0">
+            <legend class="sigem-label">Nova situação</legend>
+            <div class="flex flex-wrap gap-2">
+                @foreach($proximas + [StatusZeladoria::CANCELADA => 'Cancelar', StatusZeladoria::IMPROCEDENTE => 'Improcedente'] as $valor => $rotulo)
+                    <label class="flex cursor-pointer items-center gap-2 rounded-md border border-sigem-field px-3 py-2 text-sm has-[:checked]:border-sigem-primary has-[:checked]:bg-sigem-primary-soft dark:border-gray-700">
+                        <input type="radio" name="status" value="{{ $valor }}" required @checked(old('status') === $valor)> {{ $rotulo }}
+                    </label>
+                @endforeach
+            </div>
+        </fieldset>
+        <x-sigem.field label="Observação" for="observacao" help="Ex.: equipe e data programadas, material em falta, motivo do cancelamento.">
+            <textarea id="observacao" name="observacao" rows="2" maxlength="1000" class="sigem-input">{{ old('observacao') }}</textarea>
+        </x-sigem.field>
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Salvar situação</x-sigem.button>
         </div>
     </div>
-    <a href="{{ route('protocolo.show', $os->processo) }}" class="inline-flex items-center gap-1 text-xs font-bold text-blue-700 hover:underline dark:text-blue-300">
-        Abrir Processo no Protocolo &rarr;
-    </a>
-</div>
+</form>
+
+<form x-show="painel === 'concluir'" x-cloak method="POST" action="{{ route('zeladoria.concluir', $os) }}" enctype="multipart/form-data" class="sigem-card mb-5 border-sigem-primary">
+    @csrf
+    <input type="hidden" name="_painel" value="concluir">
+    <div class="sigem-card-header"><h2 class="sigem-card-title">Concluir demanda</h2></div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        <x-sigem.field label="Foto do serviço pronto (depois)" for="foto_depois" required help="Obrigatória: comprova a execução para o cidadão e para a auditoria.">
+            <input id="foto_depois" name="foto_depois" type="file" required accept="image/*" class="sigem-input h-auto py-1.5">
+        </x-sigem.field>
+        <x-sigem.field label="Serviço executado" for="servicos_realizados" required>
+            <textarea id="servicos_realizados" name="servicos_realizados" rows="3" required minlength="5" class="sigem-input" placeholder="Ex.: troca de lâmpada por LED 100 W no poste 12">{{ old('servicos_realizados') }}</textarea>
+        </x-sigem.field>
+        <x-sigem.field label="Seu cargo no atesto" for="atesto_cargo" help="O atesto é registrado em nome de {{ auth()->user()->name }}, com data e hora.">
+            <input id="atesto_cargo" name="atesto_cargo" type="text" maxlength="100" value="{{ old('atesto_cargo', auth()->user()->cargo) }}" class="sigem-input md:max-w-sm">
+        </x-sigem.field>
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Concluir e atestar</x-sigem.button>
+        </div>
+    </div>
+</form>
 @endif
 
-<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- Coluna 1 & 2: Localização, Mapa e Fotos Antes/Depois -->
-    <div class="lg:col-span-2 space-y-6">
-        <!-- Card: Localização e Mapa -->
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Local da Ocorrência</h2>
-            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">{{ $os->endereco_completo }}</h3>
-            @if($os->referencia_local)
-            <p class="text-xs text-gray-500 mb-4">Referência: {{ $os->referencia_local }}</p>
-            @endif
+<div class="flex flex-wrap items-start gap-5">
+    <div class="flex min-w-0 flex-[2_1_480px] flex-col gap-5">
+        <x-sigem.card title="Relato" id="t-relato">
+            <p class="m-0 whitespace-pre-line">{{ $os->relato_cliente ?: 'Sem relato.' }}</p>
+            <dl class="sigem-dl mt-4 border-t border-gray-100 pt-4 dark:border-gray-800">
+                <div><dt>Aberta em</dt><dd>{{ $abertura?->format('d/m/Y H:i') }}</dd></div>
+                <div><dt>Origem</dt><dd>{{ $origens[$os->origem_demanda] ?? 'Interna' }}</dd></div>
+                <div><dt>Previsão</dt><dd class="{{ $previsao && !$encerrada && $previsao->isPast() ? 'text-sigem-danger' : '' }}">{{ $previsao ? $previsao->format('d/m/Y') : '—' }}</dd></div>
+                <div><dt>Secretaria</dt><dd>{{ $os->secretariaResponsavel->sigla ?? ($os->secretariaResponsavel->nome ?? '—') }}</dd></div>
+            </dl>
+        </x-sigem.card>
 
-            @if($os->tem_coordenadas)
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <div id="mapaOcorrencia" class="h-64 w-full rounded-lg border border-gray-200 dark:border-gray-700 z-10 mt-3"></div>
-            @else
-            <div class="rounded-lg border border-dashed border-gray-300 p-6 text-center text-xs text-gray-400 dark:border-gray-700">
-                Coordenadas geográficas não registradas para esta ocorrência.
+        <x-sigem.card title="Fotos" id="t-fotos">
+            <div class="grid gap-4 sm:grid-cols-2">
+                @foreach(['Antes' => $os->foto_antes, 'Depois' => $os->foto_depois] as $rotulo => $foto)
+                    <figure class="m-0">
+                        @if($foto)
+                            <a href="{{ asset('storage/' . $foto) }}" target="_blank" rel="noopener">
+                                <img src="{{ asset('storage/' . $foto) }}" alt="Foto {{ mb_strtolower($rotulo) }} do local" class="h-56 w-full rounded-md border border-sigem-line object-cover dark:border-gray-800">
+                            </a>
+                        @else
+                            <div class="flex h-56 items-center justify-center rounded-md border border-dashed border-sigem-field text-[13px] text-sigem-muted dark:border-gray-700">Sem foto</div>
+                        @endif
+                        <figcaption class="mt-1 text-[13px] text-sigem-muted">{{ $rotulo }}</figcaption>
+                    </figure>
+                @endforeach
             </div>
-            @endif
-        </div>
-
-        <!-- Card: Comprovação Fotográfica (Antes vs Depois) -->
-        <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <svg class="h-5 w-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                Registro Fotográfico: Antes & Depois
-            </h2>
-
-            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <!-- Foto Antes -->
-                <div>
-                    <h3 class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">1. Situação Antes da Execução</h3>
-                    @if($os->foto_antes)
-                    <div class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50">
-                        <img src="{{ asset('storage/' . $os->foto_antes) }}" alt="Foto Antes" class="h-56 w-full object-cover">
-                    </div>
-                    @else
-                    <div class="flex h-56 flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-xs text-gray-400 dark:border-gray-700 dark:bg-gray-900/40">
-                        <svg class="h-8 w-8 text-gray-300 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                        Nenhuma foto inicial enviada
-                    </div>
-                    @endif
-                </div>
-
-                <!-- Foto Depois -->
-                <div>
-                    <h3 class="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-2">2. Situação Concluída (Depois)</h3>
-                    @if($os->foto_depois)
-                    <div class="overflow-hidden rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50/20">
-                        <img src="{{ asset('storage/' . $os->foto_depois) }}" alt="Foto Depois" class="h-56 w-full object-cover">
-                    </div>
-                    @else
-                    <div class="flex h-56 flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-xs text-gray-400 dark:border-gray-700 dark:bg-gray-900/40">
-                        <svg class="h-8 w-8 text-gray-300 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        Aguardando conclusão do serviço
-                    </div>
-                    @endif
-                </div>
-            </div>
-
-            <!-- Dados do Atesto de Execução -->
             @if($os->atesto_responsavel)
-            <div class="mt-6 rounded-lg bg-emerald-50/60 p-4 border border-emerald-200 dark:border-emerald-900/40 dark:bg-emerald-900/20 text-xs">
-                <div class="font-bold text-emerald-900 dark:text-emerald-200 mb-1">Atesto Oficial de Conclusão do Serviço Público:</div>
-                <div class="text-emerald-800 dark:text-emerald-300">
-                    Atestado por <span class="font-bold">{{ $os->atesto_responsavel }}</span> ({{ $os->atesto_cargo ?: 'Fiscal de Obras / Serviços' }}) em {{ $os->atesto_em ? $os->atesto_em->format('d/m/Y H:i') : '—' }}.
+                <div class="sigem-alert sigem-alert-ok mt-4">
+                    <div>
+                        <strong>Execução atestada</strong> por {{ $os->atesto_responsavel }}{{ $os->atesto_cargo ? ' (' . $os->atesto_cargo . ')' : '' }}{{ $os->atesto_em ? ' em ' . \Carbon\Carbon::parse($os->atesto_em)->format('d/m/Y H:i') : '' }}.
+                        @if($os->servicos_realizados)<div class="mt-1">{{ $os->servicos_realizados }}</div>@endif
+                    </div>
                 </div>
-                @if($os->servicos_realizados)
-                <div class="mt-2 text-gray-700 dark:text-gray-300 font-normal">
-                    <span class="font-semibold text-gray-800 dark:text-gray-200">Serviços executados:</span> {{ $os->servicos_realizados }}
-                </div>
-                @endif
-            </div>
             @endif
-        </div>
+        </x-sigem.card>
+
+        @if($os->observacoes_internas)
+            <x-sigem.card title="Andamento" id="t-and">
+                <ul class="m-0 flex list-none flex-col gap-2 p-0">
+                    @foreach(array_reverse(array_filter(explode("\n", $os->observacoes_internas))) as $linha)
+                        <li class="border-b border-gray-100 pb-2 text-[13px] last:border-0 dark:border-gray-800">{{ $linha }}</li>
+                    @endforeach
+                </ul>
+            </x-sigem.card>
+        @endif
     </div>
 
-    <!-- Coluna 3: Detalhes, Solicitante & Secretaria -->
-    <div class="space-y-6">
-        <!-- Card Cidadão Solicitante -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Cidadão / Solicitante</h2>
-            @if($os->cliente)
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700 font-bold">
-                    {{ substr($os->cliente->nome, 0, 2) }}
-                </div>
-                <div class="min-w-0">
-                    <h3 class="font-bold text-gray-900 dark:text-white truncate">{{ $os->cliente->nome }}</h3>
-                    <p class="text-xs text-gray-500">{{ $os->cliente->documento_principal ?? 'Sem Doc' }}</p>
-                </div>
+    <aside class="flex min-w-0 flex-[1_1_280px] flex-col gap-5">
+        <x-sigem.card :padded="false" title="Local" id="t-local">
+            <div class="px-5 py-3">
+                <div class="font-semibold">{{ $os->endereco_completo ?: ($os->logradouro ?? '—') }}</div>
+                @if($os->referencia_local)<div class="sigem-muted">Referência: {{ $os->referencia_local }}</div>@endif
             </div>
-            <div class="mt-4 border-t border-gray-100 pt-3 text-xs space-y-1.5 text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                <div>Telefone: {{ $os->cliente->telefone ?? $os->cliente->celular ?? 'Não informado' }}</div>
-                <div>Canal do chamado: <span class="font-semibold uppercase text-brand-600">{{ $os->origem_demanda }}</span></div>
-            </div>
+            @if($os->latitude && $os->longitude)
+                <div id="mapaDemanda" class="h-[220px] w-full rounded-b-lg" role="region" aria-label="Mapa do local"></div>
             @else
-            <p class="text-xs text-gray-400 italic">Munícipe anônimo.</p>
+                <p class="sigem-muted m-0 px-5 pb-4">Sem ponto no mapa.</p>
             @endif
-        </div>
+        </x-sigem.card>
 
-        <!-- Card Secretaria Responsável -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">Secretaria Executora</h2>
-            <div class="rounded-lg bg-blue-50/60 p-3.5 border border-blue-100 dark:border-blue-900/40 dark:bg-blue-900/20">
-                <div class="text-sm font-bold text-blue-900 dark:text-blue-300">
-                    {{ $os->secretariaResponsavel ? $os->secretariaResponsavel->nome_completo : 'Secretaria de Obras e Serviços Públicos' }}
-                </div>
-                <div class="mt-2 text-xs text-blue-700 dark:text-blue-300/80">
-                    Previsão de conclusão: <span class="font-semibold">{{ $os->prevista_conclusao ? $os->prevista_conclusao->format('d/m/Y') : '7 dias' }}</span>
-                </div>
-            </div>
-        </div>
+        <x-sigem.card title="Solicitante" id="t-sol">
+            <div class="font-semibold">{{ $os->cliente?->nome ?: ($os->cliente?->razao_social ?? '—') }}</div>
+            @if($os->cliente && Route::has('clientes.show'))
+                <a href="{{ route('clientes.show', $os->cliente) }}" class="sigem-link mt-1 inline-block text-[13px] font-normal">Abrir cadastro</a>
+            @endif
+        </x-sigem.card>
 
-        <!-- Card Relato da Demanda -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Relato da Demanda</h2>
-            <div class="rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-900/50 dark:text-gray-300">
-                {{ $os->relato_cliente ?: 'Sem relato adicional' }}
-            </div>
-        </div>
-    </div>
+        @if($os->chave_acesso)
+            <x-sigem.card title="Consulta pública" id="t-consulta">
+                <p class="m-0 text-[13px] text-sigem-muted dark:text-gray-400">Informe ao cidadão para acompanhar no portal:</p>
+                <dl class="sigem-dl mt-2">
+                    <div><dt>Código</dt><dd class="font-mono">{{ $os->codigo_interno }}</dd></div>
+                    <div><dt>Chave</dt><dd class="font-mono tracking-wider">{{ $os->chave_acesso }}</dd></div>
+                </dl>
+            </x-sigem.card>
+        @endif
+
+        @if($os->processo)
+            <x-sigem.card title="Processo vinculado" id="t-proc">
+                <a href="{{ route('protocolo.show', $os->processo) }}" class="sigem-link">{{ $os->processo->numero }}</a>
+                <div class="sigem-muted">{{ $os->processo->assuntoPara(auth()->user()) }}</div>
+            </x-sigem.card>
+        @endif
+    </aside>
 </div>
-
-<!-- Modal: Conclusão da Demanda com Foto do "Depois" e Atesto -->
-<div id="modalConcluirZeladoria" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
-    <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">Concluir Demanda & Atestar Serviço</h3>
-        <p class="text-xs text-gray-500 mb-4">Envie a fotografia comprobatória da obra/serviço finalizado e informe o servidor responsável pelo atesto técnico.</p>
-
-        <form action="{{ route('zeladoria.concluir', $os) }}" method="POST" enctype="multipart/form-data" class="space-y-4">
-            @csrf
-
-            <div>
-                <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Fotografia da Obra Concluída ("Depois") <span class="text-red-500">*</span></label>
-                <input type="file" name="foto_depois" required accept="image/*" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                <p class="mt-1 text-[11px] text-gray-400">Essa foto comprovará o atendimento e ficará disponível no histórico de transparência.</p>
-            </div>
-
-            <div>
-                <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Serviços Executados em Campo <span class="text-red-500">*</span></label>
-                <textarea name="servicos_realizados" rows="3" required placeholder="Ex: Substituída lâmpada de vapor por LED 150W; Aplicada massa asfáltica e compactada..." class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white"></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Nome do Fiscal / Encarregado <span class="text-red-500">*</span></label>
-                    <input type="text" name="atesto_responsavel" value="{{ auth()->user()->name }}" required class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                </div>
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Cargo / Função</label>
-                    <input type="text" name="atesto_cargo" value="Fiscal de Obras / Encarregado" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                </div>
-            </div>
-
-            <div class="flex items-center justify-end gap-2 pt-2">
-                <button type="button" onclick="fecharModalConcluir()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">Cancelar</button>
-                <button type="submit" class="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white hover:bg-emerald-700">Atestar & Concluir</button>
-            </div>
-        </form>
-    </div>
 </div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-function abrirModalConcluir() {
-    var m = document.getElementById('modalConcluirZeladoria');
-    m.classList.remove('hidden');
-    m.classList.add('flex');
-}
-function fecharModalConcluir() {
-    var m = document.getElementById('modalConcluirZeladoria');
-    m.classList.remove('flex');
-    m.classList.add('hidden');
-}
-
-@if($os->tem_coordenadas)
-document.addEventListener('DOMContentLoaded', function () {
-    var lat = {{ $os->latitude }};
-    var lng = {{ $os->longitude }};
-    var map = L.map('mapaOcorrencia').setView([lat, lng], 16);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
-
-    var marker = L.marker([lat, lng]).addTo(map);
-    marker.bindPopup('<b>{{ $os->codigo_interno }}</b><br>{{ $os->logradouro }}').openPopup();
-});
-@endif
-</script>
 @endsection
+
+@if($os->latitude && $os->longitude)
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.sigemMapa) return;
+    var ponto = [{{ (float) $os->latitude }}, {{ (float) $os->longitude }}];
+    var mapa = window.sigemMapa('mapaDemanda', { centro: ponto, zoom: 16 });
+    if (mapa) L.marker(ponto).addTo(mapa);
+});
+</script>
+@endpush
+@endif

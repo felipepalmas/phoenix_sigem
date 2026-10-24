@@ -20,34 +20,24 @@
         this.dropdownOpen = false;
     }
 }" @click.away="closeDropdown()">
-    <!-- User Button -->
-    <button
-        class="flex items-center text-gray-700 dark:text-gray-400"
-        @click.prevent="toggleDropdown()"
-        type="button"
-    >
-        <span class="mr-3 overflow-hidden rounded-full h-11 w-11">
-            @if(auth()->check() && auth()->user()->avatar)
-                <img src="{{ auth()->user()->avatar }}" alt="User" />
-            @else
-                <div class="flex h-11 w-11 items-center justify-center rounded-full bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-400">
-                    {{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 1)) }}
-                </div>
-            @endif
+    @php
+        $usuarioHeader = auth()->user();
+        $nomes = preg_split('/\s+/', trim($usuarioHeader->name ?? 'U'));
+        $iniciais = mb_strtoupper(mb_substr($nomes[0] ?? 'U', 0, 1) . (count($nomes) > 1 ? mb_substr(end($nomes), 0, 1) : ''));
+        $lotacao = $usuarioHeader?->unidadeAdministrativa;
+    @endphp
+    <button class="flex items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-sigem-neutral-soft dark:hover:bg-white/5"
+        @click.prevent="toggleDropdown()" type="button" :aria-expanded="dropdownOpen ? 'true' : 'false'" aria-haspopup="menu">
+        @if($usuarioHeader && $usuarioHeader->avatar)
+            <img src="{{ $usuarioHeader->avatar }}" alt="" class="h-8 w-8 rounded-full object-cover" />
+        @else
+            <span aria-hidden="true" class="flex h-8 w-8 items-center justify-center rounded-full bg-sigem-primary-soft text-xs font-semibold text-sigem-primary dark:bg-brand-500/20 dark:text-brand-300">{{ $iniciais }}</span>
+        @endif
+        <span class="hidden min-w-0 flex-col leading-tight sm:flex">
+            <span class="truncate text-sm font-semibold text-sigem-ink dark:text-white">{{ $usuarioHeader->name ?? 'Usuário' }}</span>
+            <span class="truncate text-xs text-sigem-muted dark:text-gray-400">{{ $lotacao ? ($lotacao->sigla ?: $lotacao->nome) : 'Sem lotação' }}</span>
         </span>
-
-       <span class="block mr-1 font-medium text-theme-sm">{{ auth()->user()->name ?? 'Usuário' }}</span>
-
-        <!-- Chevron Icon -->
-        <svg
-            class="w-5 h-5 transition-transform duration-200"
-            :class="{ 'rotate-180': dropdownOpen }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-        >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-        </svg>
+        <svg aria-hidden="true" class="h-4 w-4 text-sigem-muted transition-transform" :class="{ 'rotate-180': dropdownOpen }" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
     </button>
 
     <!-- Dropdown Start -->
@@ -59,7 +49,7 @@
         x-transition:leave="transition ease-in duration-75"
         x-transition:leave-start="transform opacity-100 scale-100"
         x-transition:leave-end="transform opacity-0 scale-95"
-        class="absolute right-0 mt-[17px] flex w-[260px] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark z-50"
+        class="absolute right-0 mt-2 flex w-[260px] flex-col rounded-lg border border-sigem-line bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900 z-50"
         style="display: none;"
     >
         <!-- User Info -->

@@ -1,397 +1,360 @@
 {{--
  * Componente da aplicação Phoenix - SIGEM (Zero Papel)
- * Visualização e Tramitação de Requisição de Materiais
+ * Almoxarifado — detalhe da requisição com ação contextual (padrão SIGEM Clean)
  *
  * @license AGPL-3.0
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-    <div>
-        <div class="flex items-center gap-3">
-            <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                Requisição {{ $requisicao->numero }}
-            </h1>
-            <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $requisicao->badge_class }}">
-                {{ $requisicao->situacao_formatada }}
-            </span>
-            @if($requisicao->prioridade === 'urgente')
-            <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                <span class="h-1.5 w-1.5 rounded-full bg-red-600 animate-pulse"></span> URGENTE
-            </span>
+@php
+    use App\Models\RequisicaoMaterial;
+
+    $tons = ['pendente_aprovacao' => 'info', 'aprovada' => 'info', 'atendida_parcial' => 'warn', 'atendida' => 'ok', 'concluida' => 'ok', 'recusada' => 'danger', 'cancelada' => 'neutral'];
+    $qtd = fn ($v) => rtrim(rtrim(number_format((float) $v, 4, ',', '.'), '0'), ',');
+    $sigla = fn ($u) => $u?->sigla ?: ($u?->nome ?? '—');
+    $encerrada = in_array($requisicao->situacao, ['concluida', 'recusada', 'cancelada'], true);
+    $mostraSaldo = in_array($requisicao->situacao, ['pendente_aprovacao', 'aprovada', 'atendida_parcial'], true);
+    $pendentes = $requisicao->itens->mapWithKeys(fn ($i) => [$i->id => RequisicaoMaterial::pendenteDoItem($i)]);
+    $itensComPendencia = $pendentes->filter(fn ($p) => $p > 0)->count();
+    $faltaSaldo = $requisicao->itens->filter(fn ($i) => $pendentes[$i->id] > 0 && (float) $i->produto?->estoque_quantidade < $pendentes[$i->id])->count();
+@endphp
+
+<div x-data="{ painel: @js(old('_painel', '')) }">
+<x-sigem.page-header :title="'Requisição ' . $requisicao->numero"
+    :subtitle="'Solicitada por ' . ($requisicao->solicitante?->name ?? 'servidor não informado') . ' em ' . $requisicao->created_at->format('d/m/Y') . ' às ' . $requisicao->created_at->format('H:i')"
+    :breadcrumbs="['Requisições' => route('almoxarifado.requisicoes.index'), $requisicao->numero => null]">
+    <x-slot:badges>
+        <x-sigem.status :tom="$tons[$requisicao->situacao] ?? 'neutral'">{{ $requisicao->situacao_formatada }}</x-sigem.status>
+        @if($requisicao->prioridade === 'urgente')<x-sigem.status tom="danger">Urgente</x-sigem.status>@endif
+    </x-slot:badges>
+    <x-slot:actions>
+        @if($podeAprovar)
+            <x-sigem.button variant="primary" @click="painel = painel === 'aprovar' ? '' : 'aprovar'" ::aria-expanded="painel === 'aprovar'">Aprovar</x-sigem.button>
+            <x-sigem.button variant="danger" @click="painel = painel === 'recusar' ? '' : 'recusar'" ::aria-expanded="painel === 'recusar'">Recusar</x-sigem.button>
+        @endif
+        @if($podeAtender)
+            <x-sigem.button variant="primary" @click="painel = painel === 'atender' ? '' : 'atender'" ::aria-expanded="painel === 'atender'">Atender e baixar estoque</x-sigem.button>
+        @endif
+        @if($podeConfirmar)
+            <x-sigem.button :variant="$podeAtender ? 'secondary' : 'primary'" @click="painel = painel === 'confirmar' ? '' : 'confirmar'" ::aria-expanded="painel === 'confirmar'">Confirmar recebimento</x-sigem.button>
+        @endif
+    </x-slot:actions>
+</x-sigem.page-header>
+
+<x-sigem.flash />
+
+{{-- Quem é o próximo a agir, quando não é o usuário atual --}}
+@if($requisicao->situacao === 'pendente_aprovacao' && ! $podeAprovar)
+    <div class="sigem-alert sigem-alert-info mb-4" role="status">
+        <span>Aguardando aprovação da chefia da <strong>{{ $requisicao->unidadeSolicitante?->nome ?? 'secretaria solicitante' }}</strong>.
+            @if((int) $requisicao->solicitante_user_id === (int) auth()->id()) Quem pede não pode aprovar o próprio pedido. @endif</span>
+    </div>
+@elseif(in_array($requisicao->situacao, ['aprovada', 'atendida_parcial'], true) && ! $podeAtender)
+    <div class="sigem-alert sigem-alert-info mb-4" role="status">
+        <span>
+            @if($requisicao->situacao === 'aprovada')
+                Aprovada. Aguardando o <strong>{{ $requisicao->almoxarifado?->nome ?? 'almoxarifado' }}</strong> separar os materiais.
+            @else
+                Entregue em parte. {{ $itensComPendencia }} {{ $itensComPendencia === 1 ? 'item ainda tem' : 'itens ainda têm' }} quantidade pendente no <strong>{{ $requisicao->almoxarifado?->nome ?? 'almoxarifado' }}</strong>.
             @endif
-        </div>
-        <p class="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-            Solicitada em {{ $requisicao->created_at->format('d/m/Y \à\s H:i') }} por {{ $requisicao->solicitante?->name }}
-        </p>
+        </span>
     </div>
-
-    <div class="flex flex-wrap items-center gap-2">
-        <a href="{{ route('almoxarifado.requisicoes.index') }}" class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-            Voltar
-        </a>
-
-        {{-- Ações conforme o estado da requisição --}}
-        @if($requisicao->situacao === 'pendente_aprovacao')
-            <button type="button" onclick="document.getElementById('modalRecusar').classList.remove('hidden')" class="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-800 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-red-900/20 transition">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                Recusar
-            </button>
-            <button type="button" onclick="document.getElementById('modalAprovar').classList.remove('hidden')" class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                Aprovar Requisição
-            </button>
-        @endif
-
-        @if(in_array($requisicao->situacao, ['aprovada', 'atendida_parcial']))
-            <button type="button" onclick="document.getElementById('modalAtender').classList.remove('hidden')" class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                Atender e Baixar do Estoque
-            </button>
-        @endif
-
-        @if($requisicao->situacao === 'atendida')
-            <form method="POST" action="{{ route('almoxarifado.requisicoes.confirmar', $requisicao) }}" onsubmit="return confirm('Confirma que os materiais foram conferidos e recebidos pela sua secretaria?');">
-                @csrf
-                <button type="submit" class="inline-flex items-center gap-1.5 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-800 transition">
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Confirmar Recebimento na Unidade
-                </button>
-            </form>
-        @endif
+@elseif($requisicao->situacao === 'atendida' && ! $podeConfirmar)
+    <div class="sigem-alert sigem-alert-info mb-4" role="status">
+        <span>Materiais separados. Aguardando a <strong>{{ $requisicao->unidadeSolicitante?->nome ?? 'secretaria solicitante' }}</strong> confirmar o recebimento.</span>
     </div>
-</div>
-
-@if(session('success'))
-<div class="mb-6 rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300">
-    {{ session('success') }}
-</div>
+@elseif($requisicao->situacao === 'recusada')
+    <div class="sigem-alert sigem-alert-danger mb-4" role="status">
+        <span>Recusada{{ $requisicao->aprovadoPor ? ' por ' . $requisicao->aprovadoPor->name : '' }}{{ $requisicao->aprovado_em ? ' em ' . $requisicao->aprovado_em->format('d/m/Y') : '' }}.
+            @if($requisicao->parecer_aprovacao) Motivo: {{ $requisicao->parecer_aprovacao }} @endif</span>
+    </div>
 @endif
 
-@if(session('warning'))
-<div class="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm font-medium text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-    {{ session('warning') }}
-</div>
+{{-- Painel: aprovar --}}
+@if($podeAprovar)
+<form x-show="painel === 'aprovar'" x-cloak method="POST" action="{{ route('almoxarifado.requisicoes.aprovar', $requisicao) }}" class="sigem-card mb-5 border-sigem-primary">
+    @csrf
+    <input type="hidden" name="_painel" value="aprovar">
+    <div class="sigem-card-header"><h2 class="sigem-card-title">Aprovar requisição</h2></div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        <p class="m-0 text-sigem-muted dark:text-gray-400">Ao aprovar, o pedido segue para o <strong class="text-sigem-ink dark:text-white">{{ $requisicao->almoxarifado?->nome ?? 'almoxarifado' }}</strong> separar os materiais.</p>
+        <x-sigem.field label="Parecer" for="parecer" help="Opcional. Fica no histórico e é visto pelo almoxarife.">
+            <textarea id="parecer" name="parecer" rows="3" maxlength="500" class="sigem-input" placeholder="Ex.: Aprovado; priorizar a entrega na escola">{{ old('parecer') }}</textarea>
+        </x-sigem.field>
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Aprovar requisição</x-sigem.button>
+        </div>
+    </div>
+</form>
+
+{{-- Painel: recusar --}}
+<form x-show="painel === 'recusar'" x-cloak method="POST" action="{{ route('almoxarifado.requisicoes.recusar', $requisicao) }}" class="sigem-card mb-5 border-red-300 dark:border-red-900">
+    @csrf
+    <input type="hidden" name="_painel" value="recusar">
+    <div class="sigem-card-header"><h2 class="sigem-card-title">Recusar requisição</h2></div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        <x-sigem.field label="Motivo da recusa" for="motivo" required help="Mínimo de 5 caracteres. O solicitante verá este motivo.">
+            <textarea id="motivo" name="motivo" rows="3" required minlength="5" maxlength="500" class="sigem-input" placeholder="Explique por que o pedido não pode ser atendido">{{ old('motivo') }}</textarea>
+        </x-sigem.field>
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="danger">Recusar requisição</x-sigem.button>
+        </div>
+    </div>
+</form>
 @endif
 
-<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- Coluna da Esquerda: Dados e Fluxo de Tramitação -->
-    <div class="lg:col-span-1 space-y-6">
-        <!-- Card de Informações Cadastrais -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-4">
-                Informações da Requisição
-            </h2>
-
-            <dl class="space-y-3 text-sm">
-                <div>
-                    <dt class="text-xs text-gray-500 dark:text-gray-400">Secretaria / Setor Solicitante</dt>
-                    <dd class="font-semibold text-gray-900 dark:text-white">
-                        {{ $requisicao->unidadeSolicitante?->sigla ? '['.$requisicao->unidadeSolicitante?->sigla.'] ' : '' }}
-                        {{ $requisicao->unidadeSolicitante?->nome }}
-                    </dd>
-                </div>
-
-                <div>
-                    <dt class="text-xs text-gray-500 dark:text-gray-400">Almoxarifado Fornecedor</dt>
-                    <dd class="font-semibold text-gray-900 dark:text-white">
-                        {{ $requisicao->almoxarifado?->nome }}
-                    </dd>
-                    @if($requisicao->almoxarifado?->localizacao)
-                    <dd class="text-xs text-gray-400">{{ $requisicao->almoxarifado->localizacao }}</dd>
-                    @endif
-                </div>
-
-                <div>
-                    <dt class="text-xs text-gray-500 dark:text-gray-400">Servidor Solicitante</dt>
-                    <dd class="font-medium text-gray-800 dark:text-gray-200">
-                        {{ $requisicao->solicitante?->name }} ({{ $requisicao->solicitante?->email }})
-                    </dd>
-                </div>
-
-                @if($requisicao->processo)
-                <div class="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-900/50 dark:bg-purple-900/20">
-                    <dt class="text-xs font-semibold text-purple-800 dark:text-purple-300">Processo Zero Papel Vinculado</dt>
-                    <dd class="mt-1">
-                        <a href="{{ route('protocolo.show', $requisicao->processo) }}" class="inline-flex items-center gap-1 text-xs font-bold text-purple-700 hover:underline dark:text-purple-400">
-                            {{ $requisicao->processo->numero }}
-                            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                        </a>
-                        <p class="text-xs text-purple-600 dark:text-purple-400 truncate">{{ $requisicao->processo->assunto }}</p>
-                    </dd>
-                </div>
-                @endif
-
-                <div class="border-t border-gray-100 pt-3 dark:border-gray-700">
-                    <dt class="text-xs text-gray-500 dark:text-gray-400 mb-1">Justificativa Pública</dt>
-                    <dd class="rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                        {{ $requisicao->justificativa }}
-                    </dd>
-                </div>
-            </dl>
-        </div>
-
-        <!-- Linha do Tempo / Workflow -->
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-4">
-                Trâmite & Atendimento
-            </h2>
-
-            <ol class="relative border-l border-gray-200 ml-3 space-y-6 dark:border-gray-700">
-                <!-- 1. Solicitação -->
-                <li class="ml-6">
-                    <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-600 ring-8 ring-white dark:bg-blue-900 dark:text-blue-300 dark:ring-gray-800">
-                        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                    </span>
-                    <h3 class="text-xs font-bold text-gray-900 dark:text-white">Solicitação Criada</h3>
-                    <p class="text-xs text-gray-500">{{ $requisicao->created_at->format('d/m/Y H:i') }}</p>
-                    <p class="text-xs text-gray-400">Por {{ $requisicao->solicitante?->name }}</p>
-                </li>
-
-                <!-- 2. Aprovação Chefia -->
-                <li class="ml-6">
-                    @if($requisicao->aprovado_em)
-                        <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full {{ $requisicao->situacao === 'recusada' ? 'bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900 dark:text-emerald-300' }} ring-8 ring-white dark:ring-gray-800">
-                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                        </span>
-                        <h3 class="text-xs font-bold {{ $requisicao->situacao === 'recusada' ? 'text-red-700' : 'text-emerald-700' }} dark:text-white">
-                            {{ $requisicao->situacao === 'recusada' ? 'Requisição Recusada' : 'Aprovada pela Chefia' }}
-                        </h3>
-                        <p class="text-xs text-gray-500">{{ $requisicao->aprovado_em->format('d/m/Y H:i') }}</p>
-                        <p class="text-xs text-gray-400">Por {{ $requisicao->aprovadoPor?->name }}</p>
-                        @if($requisicao->parecer_aprovacao)
-                        <p class="mt-1 text-xs italic text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 p-2 rounded">"{{ $requisicao->parecer_aprovacao }}"</p>
-                        @endif
-                    @else
-                        <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-400 ring-8 ring-white dark:bg-gray-700 dark:ring-gray-800">
-                            <span class="h-2 w-2 rounded-full bg-gray-400"></span>
-                        </span>
-                        <h3 class="text-xs font-medium text-gray-400">Aprovação da Chefia</h3>
-                        <p class="text-xs text-amber-500">Aguardando parecer do gestor da unidade</p>
-                    @endif
-                </li>
-
-                <!-- 3. Atendimento Almoxarifado -->
-                <li class="ml-6">
-                    @if($requisicao->atendido_em)
-                        <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-600 ring-8 ring-white dark:bg-blue-900 dark:text-blue-300 dark:ring-gray-800">
-                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                        </span>
-                        <h3 class="text-xs font-bold text-gray-900 dark:text-white">Atendido pelo Almoxarife</h3>
-                        <p class="text-xs text-gray-500">{{ $requisicao->atendido_em->format('d/m/Y H:i') }}</p>
-                        <p class="text-xs text-gray-400">Por {{ $requisicao->atendidoPor?->name }}</p>
-                        @if($requisicao->observacoes_atendimento)
-                        <p class="mt-1 text-xs italic text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 p-2 rounded">"{{ $requisicao->observacoes_atendimento }}"</p>
-                        @endif
-                    @else
-                        <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-400 ring-8 ring-white dark:bg-gray-700 dark:ring-gray-800">
-                            <span class="h-2 w-2 rounded-full bg-gray-400"></span>
-                        </span>
-                        <h3 class="text-xs font-medium text-gray-400">Separação no Almoxarifado</h3>
-                        <p class="text-xs text-gray-400">Aguardando atendimento</p>
-                    @endif
-                </li>
-
-                <!-- 4. Recebimento Solicitante -->
-                <li class="ml-6">
-                    @if($requisicao->recebido_em)
-                        <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-white dark:bg-emerald-900 dark:text-emerald-300 dark:ring-gray-800">
-                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        </span>
-                        <h3 class="text-xs font-bold text-emerald-700 dark:text-white">Recebimento Confirmado</h3>
-                        <p class="text-xs text-gray-500">{{ $requisicao->recebido_em->format('d/m/Y H:i') }}</p>
-                        <p class="text-xs text-gray-400">Por {{ $requisicao->recebidoPor?->name }}</p>
-                    @else
-                        <span class="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-gray-400 ring-8 ring-white dark:bg-gray-700 dark:ring-gray-800">
-                            <span class="h-2 w-2 rounded-full bg-gray-400"></span>
-                        </span>
-                        <h3 class="text-xs font-medium text-gray-400">Confirmação de Recebimento</h3>
-                        <p class="text-xs text-gray-400">Pendente de entrega/retirada</p>
-                    @endif
-                </li>
-            </ol>
+{{-- Painel: atender (entrega agora, limitada ao pendente) --}}
+@if($podeAtender)
+<form x-show="painel === 'atender'" x-cloak method="POST" action="{{ route('almoxarifado.requisicoes.atender', $requisicao) }}" class="sigem-card mb-5 border-sigem-primary">
+    @csrf
+    <input type="hidden" name="_painel" value="atender">
+    <div class="sigem-card-header">
+        <div class="min-w-0 flex-1">
+            <h2 class="sigem-card-title">Atender e baixar do estoque</h2>
+            <p class="m-0 mt-0.5 text-[13px] text-sigem-muted dark:text-gray-400">Informe quanto está sendo entregue agora. O que faltar fica pendente para outra entrega.</p>
         </div>
     </div>
-
-    <!-- Coluna da Direita: Grade de Materiais Solicitados e Atendidos -->
-    <div class="lg:col-span-2 space-y-6">
-        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-4 flex items-center justify-between">
-                <span class="flex items-center gap-2">
-                    <svg class="h-5 w-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                    Itens da Requisição
-                </span>
-                <span class="text-xs font-normal text-gray-500 dark:text-gray-400">
-                    Total: {{ $requisicao->itens->count() }} item(ns)
-                </span>
-            </h2>
-
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm text-gray-600 dark:text-gray-300">
-                    <thead class="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                        <tr>
-                            <th class="px-4 py-3">Código / Material</th>
-                            <th class="px-4 py-3 text-center">Unidade</th>
-                            <th class="px-4 py-3 text-right">Qtd Solicitada</th>
-                            <th class="px-4 py-3 text-right">Qtd Atendida</th>
-                            <th class="px-4 py-3 text-right">Saldo Almoxarifado</th>
-                            <th class="px-4 py-3 text-center">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                        @foreach($requisicao->itens as $item)
-                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                            <td class="px-4 py-3.5">
-                                <span class="font-bold text-gray-900 dark:text-white">{{ $item->produto?->nome }}</span>
-                                <span class="block text-xs text-gray-400">SKU: {{ $item->produto?->codigo_sku ?: '—' }} | Loc: {{ $item->produto?->estoque_localizacao ?: 'Central' }}</span>
-                            </td>
-                            <td class="px-4 py-3.5 text-center font-medium text-xs">
-                                {{ $item->produto?->unidade ?: 'UN' }}
-                            </td>
-                            <td class="px-4 py-3.5 text-right font-bold text-gray-900 dark:text-white">
-                                {{ number_format($item->quantidade_solicitada, 2, ',', '.') }}
-                            </td>
-                            <td class="px-4 py-3.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                {{ number_format($item->quantidade_atendida, 2, ',', '.') }}
-                            </td>
-                            <td class="px-4 py-3.5 text-right text-xs">
-                                <span class="font-semibold {{ (float) $item->produto?->estoque_quantidade <= (float) $item->produto?->estoque_minimo ? 'text-amber-600' : 'text-gray-700 dark:text-gray-300' }}">
-                                    {{ number_format((float) $item->produto?->estoque_quantidade, 2, ',', '.') }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-3.5 text-center">
-                                @if((float) $item->quantidade_atendida >= (float) $item->quantidade_solicitada && (float) $item->quantidade_atendida > 0)
-                                <span class="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                    Atendido
-                                </span>
-                                @elseif((float) $item->quantidade_atendida > 0)
-                                <span class="inline-flex rounded-full bg-cyan-100 px-2 py-0.5 text-xs font-semibold text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400">
-                                    Parcial
-                                </span>
-                                @else
-                                <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                                    Pendente
-                                </span>
-                                @endif
-                            </td>
-                        </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
+    @if($faltaSaldo > 0)
+        <div class="sigem-alert sigem-alert-warn mx-5 mt-4" role="status">
+            <span>{{ $faltaSaldo }} {{ $faltaSaldo === 1 ? 'item tem' : 'itens têm' }} saldo menor que o pendente. Reduza a quantidade para o saldo disponível; o sistema não deixa o estoque ficar negativo.</span>
         </div>
-    </div>
-</div>
-
-{{-- MODAL APROVAR REQUISIÇÃO --}}
-<div id="modalAprovar" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 hidden">
-    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
-        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">Aprovar Requisição de Material</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Como chefia/gestor da unidade, aprove esta requisição para que o Almoxarifado providencie a separação física dos materiais.
-        </p>
-
-        <form method="POST" action="{{ route('almoxarifado.requisicoes.aprovar', $requisicao) }}">
-            @csrf
-            <div class="mb-4">
-                <label class="block text-xs font-semibold uppercase text-gray-700 dark:text-gray-300 mb-1">
-                    Parecer / Despacho de Aprovação (Opcional)
-                </label>
-                <textarea name="parecer" rows="3" placeholder="Observações para o almoxarife..." class="w-full rounded-lg border border-gray-300 p-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"></textarea>
-            </div>
-
-            <div class="flex justify-end gap-2">
-                <button type="button" onclick="document.getElementById('modalAprovar').classList.add('hidden')" class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700">
-                    Cancelar
-                </button>
-                <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700">
-                    Confirmar Aprovação
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-{{-- MODAL RECUSAR REQUISIÇÃO --}}
-<div id="modalRecusar" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 hidden">
-    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800">
-        <h3 class="text-lg font-bold text-red-600 dark:text-red-400 mb-2">Recusar Requisição</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Informe o motivo circunstanciado da recusa desta requisição. O solicitante será notificado.
-        </p>
-
-        <form method="POST" action="{{ route('almoxarifado.requisicoes.recusar', $requisicao) }}">
-            @csrf
-            <div class="mb-4">
-                <label class="block text-xs font-semibold uppercase text-gray-700 dark:text-gray-300 mb-1">
-                    Motivo da Recusa <span class="text-red-500">*</span>
-                </label>
-                <textarea name="motivo" required rows="3" placeholder="Justifique o motivo..." class="w-full rounded-lg border border-gray-300 p-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"></textarea>
-            </div>
-
-            <div class="flex justify-end gap-2">
-                <button type="button" onclick="document.getElementById('modalRecusar').classList.add('hidden')" class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700">
-                    Voltar
-                </button>
-                <button type="submit" class="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700">
-                    Confirmar Recusa
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-{{-- MODAL ATENDER E BAIXAR ESTOQUE --}}
-<div id="modalAtender" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 hidden">
-    <div class="w-full max-w-xl rounded-xl bg-white p-6 shadow-xl dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
-        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-1">Atendimento do Almoxarifado</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Confirme as quantidades a serem fornecidas. Ao confirmar, o sistema realizará a **baixa automática do saldo no estoque municipal** e registrará a saída no Kardex.
-        </p>
-
-        <form method="POST" action="{{ route('almoxarifado.requisicoes.atender', $requisicao) }}">
-            @csrf
-
-            <div class="mb-4 space-y-3">
-                @foreach($requisicao->itens as $item)
-                <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
-                    <div class="flex items-center justify-between mb-2">
-                        <div>
-                            <span class="text-xs font-bold text-gray-900 dark:text-white">{{ $item->produto?->nome }}</span>
-                            <span class="block text-[10px] text-gray-500">Saldo atual: {{ (float) $item->produto?->estoque_quantidade }} {{ $item->produto?->unidade ?: 'UN' }}</span>
+    @endif
+    <x-sigem.table min-width="760px" class="mt-3">
+        <x-slot:head>
+            <th scope="col">Material</th>
+            <th scope="col" class="text-right">Solicitada</th>
+            <th scope="col" class="text-right">Já entregue</th>
+            <th scope="col" class="text-right">Pendente</th>
+            <th scope="col" class="text-right">Saldo em estoque</th>
+            <th scope="col" class="w-44">Entregar agora</th>
+        </x-slot:head>
+        @foreach($requisicao->itens as $item)
+            @php
+                $pend = $pendentes[$item->id];
+                $saldo = (float) $item->produto?->estoque_quantidade;
+                $un = $item->produto?->unidade ?: 'UN';
+            @endphp
+            <tr>
+                <td>
+                    <div class="font-semibold">{{ $item->produto?->nome ?? 'Material removido' }}</div>
+                    @if($item->produto?->codigo_sku)<div class="text-[13px] text-sigem-muted dark:text-gray-400">{{ $item->produto->codigo_sku }}</div>@endif
+                </td>
+                <td class="whitespace-nowrap text-right">{{ $qtd($item->quantidade_solicitada) }} {{ $un }}</td>
+                <td class="whitespace-nowrap text-right">{{ $qtd($item->quantidade_atendida) }} {{ $un }}</td>
+                <td class="whitespace-nowrap text-right font-semibold">{{ $qtd($pend) }} {{ $un }}</td>
+                <td class="whitespace-nowrap text-right">
+                    {{ $qtd($saldo) }} {{ $un }}
+                    @if($pend > 0 && $saldo < $pend)
+                        <div><x-sigem.status tom="warn">Saldo insuficiente</x-sigem.status></div>
+                    @endif
+                </td>
+                <td>
+                    @if($pend > 0)
+                        <label for="atender-{{ $item->id }}" class="sr-only">Quantidade de {{ $item->produto?->nome }} entregue agora</label>
+                        <div class="flex items-center gap-2">
+                            <input id="atender-{{ $item->id }}" name="itens[{{ $item->id }}]" type="number" step="any" min="0" max="{{ $pend }}" inputmode="decimal"
+                                value="{{ old('itens.' . $item->id, $pend) }}" class="sigem-input w-28 text-right">
+                            <span class="text-[13px] text-sigem-muted dark:text-gray-400">{{ $un }}</span>
                         </div>
-                        <span class="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                            Pedida: {{ (float) $item->quantidade_solicitada }} {{ $item->produto?->unidade ?: 'UN' }}
-                        </span>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                        <label class="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Qtd a Atender:</label>
-                        <input type="number" step="0.01" min="0" max="{{ (float) $item->produto?->estoque_quantidade }}" name="itens[{{ $item->id }}]" value="{{ (float) $item->quantidade_solicitada }}" class="block w-full rounded-lg border border-gray-300 px-3 py-1 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-white" required>
-                    </div>
-                </div>
-                @endforeach
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-xs font-semibold uppercase text-gray-700 dark:text-gray-300 mb-1">
-                    Observações de Separação / Guia de Saída (Opcional)
-                </label>
-                <textarea name="observacoes" rows="2" placeholder="Ex.: Lote nº 123, entregue ao motorista..." class="w-full rounded-lg border border-gray-300 p-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white"></textarea>
-            </div>
-
-            <div class="flex justify-end gap-2">
-                <button type="button" onclick="document.getElementById('modalAtender').classList.add('hidden')" class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700">
-                    Cancelar
-                </button>
-                <button type="submit" class="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700">
-                    Efetivar Baixa no Estoque
-                </button>
-            </div>
-        </form>
+                    @else
+                        <x-sigem.status tom="ok">Entregue</x-sigem.status>
+                    @endif
+                </td>
+            </tr>
+        @endforeach
+    </x-sigem.table>
+    <div class="sigem-card-body flex flex-col gap-4 border-t border-sigem-line dark:border-gray-800">
+        <x-sigem.field label="Observações da entrega" for="observacoes" help="Opcional. Ex.: retirado pelo motorista da secretaria, lote, guia de saída.">
+            <textarea id="observacoes" name="observacoes" rows="2" maxlength="500" class="sigem-input">{{ old('observacoes') }}</textarea>
+        </x-sigem.field>
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Registrar entrega</x-sigem.button>
+        </div>
     </div>
+</form>
+@endif
+
+{{-- Painel: confirmar recebimento --}}
+@if($podeConfirmar)
+<form x-show="painel === 'confirmar'" x-cloak method="POST" action="{{ route('almoxarifado.requisicoes.confirmar', $requisicao) }}" class="sigem-card mb-5 border-sigem-primary">
+    @csrf
+    <input type="hidden" name="_painel" value="confirmar">
+    <div class="sigem-card-header"><h2 class="sigem-card-title">Confirmar recebimento</h2></div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        <p class="m-0">Confirme somente depois de conferir os materiais entregues à {{ $requisicao->unidadeSolicitante?->nome ?? 'secretaria' }}. A confirmação encerra a requisição.</p>
+        @if($requisicao->situacao === 'atendida_parcial')
+            <div class="sigem-alert sigem-alert-warn" role="status">
+                <span>Esta requisição foi entregue só em parte ({{ $itensComPendencia }} {{ $itensComPendencia === 1 ? 'item pendente' : 'itens pendentes' }}). Ao confirmar agora, o que falta <strong>não será mais entregue</strong>; faça nova requisição se precisar.</span>
+            </div>
+        @endif
+        <div class="flex justify-end gap-2">
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Confirmar recebimento</x-sigem.button>
+        </div>
+    </div>
+</form>
+@endif
+
+<div class="flex flex-wrap items-start gap-5">
+    <div class="flex min-w-0 flex-[2_1_520px] flex-col gap-5">
+        <x-sigem.card title="Pedido" id="t-pedido">
+            <p class="m-0 whitespace-pre-line">{{ $requisicao->justificativa }}</p>
+        </x-sigem.card>
+
+        <x-sigem.card title="Materiais" id="t-itens" :padded="false">
+            <x-slot:actions><span class="text-[13px] text-sigem-muted dark:text-gray-400">{{ $requisicao->itens->count() }} {{ $requisicao->itens->count() === 1 ? 'item' : 'itens' }}</span></x-slot:actions>
+            <x-sigem.table min-width="640px">
+                <x-slot:head>
+                    <th scope="col">Material</th>
+                    <th scope="col" class="text-right">Solicitada</th>
+                    <th scope="col" class="text-right">Entregue</th>
+                    @if($mostraSaldo)<th scope="col" class="text-right">Saldo em estoque</th>@endif
+                    <th scope="col">Situação</th>
+                </x-slot:head>
+                @foreach($requisicao->itens as $item)
+                    @php
+                        $pend = $pendentes[$item->id];
+                        $entregue = (float) $item->quantidade_atendida;
+                        $saldo = (float) $item->produto?->estoque_quantidade;
+                        $un = $item->produto?->unidade ?: 'UN';
+                    @endphp
+                    <tr>
+                        <td>
+                            <div class="font-semibold">{{ $item->produto?->nome ?? 'Material removido' }}</div>
+                            @if($item->produto?->codigo_sku)<div class="text-[13px] text-sigem-muted dark:text-gray-400">{{ $item->produto->codigo_sku }}</div>@endif
+                        </td>
+                        <td class="whitespace-nowrap text-right">{{ $qtd($item->quantidade_solicitada) }} {{ $un }}</td>
+                        <td class="whitespace-nowrap text-right">{{ $qtd($entregue) }} {{ $un }}</td>
+                        @if($mostraSaldo)
+                            <td class="whitespace-nowrap text-right">
+                                {{ $qtd($saldo) }} {{ $un }}
+                                @if($pend > 0 && $saldo < $pend)<div><x-sigem.status tom="warn">Abaixo do pendente</x-sigem.status></div>@endif
+                            </td>
+                        @endif
+                        <td class="whitespace-nowrap">
+                            @if($pend <= 0)
+                                <x-sigem.status tom="ok">Entregue</x-sigem.status>
+                            @elseif($entregue > 0)
+                                <x-sigem.status tom="warn">Faltam {{ $qtd($pend) }} {{ $un }}</x-sigem.status>
+                            @elseif($encerrada)
+                                <x-sigem.status tom="neutral">Não entregue</x-sigem.status>
+                            @else
+                                <x-sigem.status tom="info">A entregar</x-sigem.status>
+                            @endif
+                        </td>
+                    </tr>
+                @endforeach
+            </x-sigem.table>
+        </x-sigem.card>
+
+        <x-sigem.card title="Histórico" id="t-hist">
+            @php
+                $eventos = collect();
+                $eventos->push(['quando' => $requisicao->created_at, 'titulo' => 'Requisição enviada para aprovação', 'quem' => $requisicao->solicitante?->name, 'texto' => null]);
+                if ($requisicao->aprovado_em) {
+                    $eventos->push([
+                        'quando' => $requisicao->aprovado_em,
+                        'titulo' => $requisicao->situacao === 'recusada' ? 'Recusada pela chefia' : 'Aprovada pela chefia',
+                        'quem' => $requisicao->aprovadoPor?->name,
+                        'texto' => $requisicao->parecer_aprovacao,
+                    ]);
+                }
+                if ($entregas->isNotEmpty()) {
+                    foreach ($entregas as $n => $grupo) {
+                        $primeiro = $grupo->first();
+                        $eventos->push([
+                            'quando' => $primeiro->created_at,
+                            'titulo' => ($entregas->count() > 1 ? ($n + 1) . 'ª entrega' : 'Materiais entregues') . ' pelo almoxarifado',
+                            'quem' => $primeiro->user?->name,
+                            'texto' => null,
+                            'itens' => $grupo->map(fn ($m) => $qtd($m->quantidade) . ' ' . ($m->produto?->unidade ?: 'UN') . ' de ' . ($m->produto?->nome ?? 'material'))->all(),
+                        ]);
+                    }
+                    if ($requisicao->observacoes_atendimento) {
+                        $ultima = $eventos->pop();
+                        $ultima['texto'] = $requisicao->observacoes_atendimento;
+                        $eventos->push($ultima);
+                    }
+                } elseif ($requisicao->atendido_em) {
+                    $eventos->push(['quando' => $requisicao->atendido_em, 'titulo' => 'Atendida pelo almoxarifado', 'quem' => $requisicao->atendidoPor?->name, 'texto' => $requisicao->observacoes_atendimento]);
+                }
+                if ($requisicao->recebido_em) {
+                    $eventos->push(['quando' => $requisicao->recebido_em, 'titulo' => 'Recebimento confirmado', 'quem' => $requisicao->recebidoPor?->name, 'texto' => null]);
+                }
+                $eventos = $eventos->reverse()->values();
+            @endphp
+            <x-sigem.timeline>
+                @foreach($eventos as $ev)
+                    <x-sigem.timeline-item :destaque="$loop->first" :ultimo="$loop->last">
+                        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            <strong>{{ $ev['titulo'] }}</strong>
+                            <span class="text-[13px] text-sigem-muted dark:text-gray-400">{{ $ev['quando']->format('d/m/Y H:i') }}{{ $ev['quem'] ? ' · ' . $ev['quem'] : '' }}</span>
+                        </div>
+                        @if(!empty($ev['itens']))
+                            <ul class="m-0 mt-1 list-disc pl-5 text-[13px]">
+                                @foreach($ev['itens'] as $linha)<li>{{ $linha }}</li>@endforeach
+                            </ul>
+                        @endif
+                        @if($ev['texto'])<p class="m-0 mt-1 whitespace-pre-line">{{ $ev['texto'] }}</p>@endif
+                    </x-sigem.timeline-item>
+                @endforeach
+            </x-sigem.timeline>
+        </x-sigem.card>
+    </div>
+
+    <aside class="flex min-w-0 flex-[1_1_280px] flex-col gap-5">
+        <x-sigem.card title="Dados da requisição" id="t-dados">
+            <dl class="m-0 flex flex-col gap-3 [&_dd]:m-0 [&_dd]:mt-0.5 [&_dd]:font-semibold [&_dt]:text-xs [&_dt]:text-sigem-muted dark:[&_dt]:text-gray-400">
+                <div><dt>Secretaria solicitante</dt><dd>{{ $requisicao->unidadeSolicitante?->sigla ? $requisicao->unidadeSolicitante->sigla . ' — ' : '' }}{{ $requisicao->unidadeSolicitante?->nome ?? '—' }}</dd></div>
+                <div>
+                    <dt>Almoxarifado</dt>
+                    <dd>{{ $requisicao->almoxarifado?->nome ?? '—' }}</dd>
+                    @if($requisicao->almoxarifado?->localizacao)<dd class="!font-normal text-[13px] text-sigem-muted dark:text-gray-400">{{ $requisicao->almoxarifado->localizacao }}</dd>@endif
+                </div>
+                <div><dt>Solicitante</dt><dd>{{ $requisicao->solicitante?->name ?? '—' }}</dd></div>
+                <div><dt>Prioridade</dt><dd>{{ $requisicao->prioridade === 'urgente' ? 'Urgente' : 'Normal' }}</dd></div>
+                @if($requisicao->processo)
+                    <div>
+                        <dt>Processo vinculado</dt>
+                        <dd><a href="{{ route('protocolo.show', $requisicao->processo) }}" class="sigem-link">{{ $requisicao->processo->numero }}</a></dd>
+                        <dd class="!font-normal truncate text-[13px] text-sigem-muted dark:text-gray-400" title="{{ $requisicao->processo->assuntoPara(auth()->user()) }}">{{ $requisicao->processo->assuntoPara(auth()->user()) }}</dd>
+                    </div>
+                @endif
+            </dl>
+        </x-sigem.card>
+
+        <x-sigem.card title="Etapas" id="t-etapas">
+            @php
+                $etapas = [
+                    ['Aprovação da chefia', $requisicao->aprovado_em, $requisicao->situacao === 'recusada'],
+                    ['Separação no almoxarifado', $requisicao->situacao === 'atendida_parcial' ? null : $requisicao->atendido_em, false],
+                    ['Recebimento na secretaria', $requisicao->recebido_em, false],
+                ];
+            @endphp
+            <ol class="m-0 flex list-none flex-col gap-2.5 p-0">
+                @foreach($etapas as [$rotulo, $data, $recusa])
+                    <li class="flex items-center justify-between gap-3">
+                        <span>{{ $rotulo }}</span>
+                        @if($recusa)
+                            <x-sigem.status tom="danger">Recusada</x-sigem.status>
+                        @elseif($data)
+                            <span class="text-[13px] text-sigem-ok dark:text-green-400">{{ $data->format('d/m/Y') }}</span>
+                        @elseif($loop->index === 1 && $requisicao->situacao === 'atendida_parcial')
+                            <x-sigem.status tom="warn">Parcial</x-sigem.status>
+                        @elseif($requisicao->situacao === 'recusada' || $requisicao->situacao === 'cancelada')
+                            <span class="text-[13px] text-sigem-muted">—</span>
+                        @else
+                            <span class="text-[13px] text-sigem-muted dark:text-gray-400">pendente</span>
+                        @endif
+                    </li>
+                @endforeach
+            </ol>
+        </x-sigem.card>
+    </aside>
+</div>
 </div>
 @endsection

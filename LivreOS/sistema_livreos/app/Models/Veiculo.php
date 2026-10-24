@@ -76,31 +76,84 @@ class Veiculo extends Model
         return $this->hasMany(ManutencaoFrota::class, 'veiculo_id');
     }
 
+    /** Tipos aceitos no cadastro (valor gravado => rótulo). */
+    public const TIPOS = [
+        'passeio' => 'Passeio',
+        'utilitario' => 'Utilitário / caminhonete',
+        'caminhao' => 'Caminhão',
+        'onibus_escolar' => 'Transporte escolar (ônibus/van)',
+        'ambulancia' => 'Ambulância',
+        'maquina_pesada' => 'Máquina pesada',
+        'motocicleta' => 'Motocicleta',
+    ];
+
+    /** Combustíveis aceitos (valor gravado => rótulo). */
+    public const COMBUSTIVEIS = [
+        'diesel_s10' => 'Diesel S10',
+        'diesel_s500' => 'Diesel S500',
+        'gasolina' => 'Gasolina',
+        'etanol' => 'Etanol',
+        'flex' => 'Flex (gasolina/etanol)',
+        'gnv' => 'GNV',
+        'eletrico' => 'Elétrico',
+    ];
+
+    /** Situações (valor gravado => rótulo). */
+    public const SITUACOES = [
+        'disponivel' => 'Disponível',
+        'em_viagem' => 'Em viagem',
+        'em_manutencao' => 'Em manutenção',
+        'inoperante' => 'Inoperante',
+        'baixado' => 'Baixado',
+    ];
+
     // Helpers visuais
     public function getTipoFormatadoAttribute(): string
     {
-        return match ($this->tipo) {
-            'passeio' => 'Veículo Leve / Passeio',
-            'utilitario' => 'Utilitário / Caminhonete',
-            'caminhao' => 'Caminhão Pesado / Caçamba',
-            'onibus_escolar' => 'Transporte Escolar (Ônibus/Van)',
-            'ambulancia' => 'Ambulância / Saúde SAMU',
-            'maquina_pesada' => 'Máquina Pesada (Patrola/Retro)',
-            'motocicleta' => 'Motocicleta / Fiscalização',
-            default => ucfirst(str_replace('_', ' ', $this->tipo)),
-        };
+        return self::TIPOS[$this->tipo] ?? ucfirst(str_replace('_', ' ', (string) $this->tipo));
+    }
+
+    public function getCombustivelFormatadoAttribute(): string
+    {
+        return self::rotuloCombustivel($this->combustivel);
+    }
+
+    public static function rotuloCombustivel(?string $combustivel): string
+    {
+        return self::COMBUSTIVEIS[$combustivel] ?? ucfirst(str_replace('_', ' ', (string) $combustivel));
     }
 
     public function getStatusFormatadoAttribute(): string
     {
+        return self::SITUACOES[$this->status] ?? ucfirst(str_replace('_', ' ', (string) $this->status));
+    }
+
+    /** Tom do badge SIGEM (info|ok|warn|danger|neutral). */
+    public function getStatusTomAttribute(): string
+    {
         return match ($this->status) {
-            'disponivel' => 'Disponível na Garagem',
-            'em_viagem' => 'Em Viagem / Rota',
-            'em_manutencao' => 'Em Manutenção / Oficina',
-            'inoperante' => 'Inoperante / Aguardando Peça',
-            'baixado' => 'Baixado / Leilão',
-            default => ucfirst(str_replace('_', ' ', $this->status)),
+            'disponivel' => 'ok',
+            'em_viagem' => 'info',
+            'em_manutencao' => 'warn',
+            'inoperante' => 'danger',
+            default => 'neutral',
         };
+    }
+
+    /** Máquinas pesadas registram horímetro (horas de uso), não quilometragem. */
+    public function getUsaHorimetroAttribute(): bool
+    {
+        return $this->tipo === 'maquina_pesada';
+    }
+
+    public function getUnidadeMedidaAttribute(): string
+    {
+        return $this->usa_horimetro ? 'h' : 'km';
+    }
+
+    public function getHodometroFormatadoAttribute(): string
+    {
+        return number_format((int) $this->km_atual, 0, ',', '.') . ' ' . $this->unidade_medida;
     }
 
     public function getStatusBadgeAttribute(): string

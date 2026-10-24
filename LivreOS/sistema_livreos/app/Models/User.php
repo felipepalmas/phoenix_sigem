@@ -174,6 +174,37 @@ class User extends Authenticatable
     }
 
     /**
+     * Gestor geral (administrador do sistema ou papel "admin"): enxerga e age em todas as secretarias.
+     * O papel "manager" (chefia) age apenas na secretaria em que está lotado, conforme suas permissões.
+     */
+    public function ehGestorGeral(): bool
+    {
+        return (bool) $this->is_admin || $this->hasRole('admin');
+    }
+
+    /**
+     * O servidor está lotado na unidade informada?
+     */
+    public function lotadoEm($unidadeId): bool
+    {
+        return $unidadeId !== null
+            && $this->unidade_administrativa_id !== null
+            && (int) $this->unidade_administrativa_id === (int) $unidadeId;
+    }
+
+    /**
+     * Pode executar a ação na unidade: gestor geral, ou lotado na unidade E com a permissão.
+     */
+    public function podeNaUnidade(string $permissao, $unidadeId): bool
+    {
+        if ($this->ehGestorGeral()) {
+            return true;
+        }
+
+        return $this->lotadoEm($unidadeId) && $this->hasPermission($permissao);
+    }
+
+    /**
      * Gera um novo token de API e persiste no usuário. Retorna o token em texto puro.
      */
     public function createApiToken(): string

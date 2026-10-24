@@ -2,6 +2,24 @@
 
 Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
 
+## [2.1.0-municipal] - 2026-10-25
+### Changed
+- **Novo padrão de interface "SIGEM Clean"** (`docs/ux/PADRAO-SIGEM-CLEAN.md`): uma cor de ação (azul gov.br), cor de status só com significado, componentes Blade `x-sigem.*`, fonte do sistema (sem Google Fonts), Leaflet/Alpine empacotados (sem CDN).
+- Menu lateral agrupado (Atendimento, Recursos, Cadastros, Administração) com links diretos; abas internas por módulo; cabeçalho mostra a lotação do usuário.
+- **Início = "Minha caixa"**: processos a receber, processos com o servidor, requisições a aprovar/atender e demandas de zeladoria da secretaria.
+- Telas reescritas: Protocolo, Zeladoria, Almoxarifado (requisições e Kardex), Frota, Secretarias, Busca, Portal do Cidadão e login.
+
+### Fixed / Security
+- Lotação (secretaria) no cadastro de usuários; chefia (papel *manager*) age só na própria secretaria e não pode alterar lotação nem conceder o papel admin.
+- Atendimento parcial de requisição não baixa estoque em dobro (entrega limitada ao pendente, quantidade acumulada).
+- Numeração ZEL/REQ/VIA sem corrida (`numeradores` com `SELECT … FOR UPDATE`) e código de OS único.
+- Históricos de frota e auditoria deixam de ser apagados em cascata; chaves estrangeiras no Protocolo.
+- Portal: consulta de processo exige número + chave de acesso; demandas de zeladoria sem chave mostram só o andamento.
+- Usuário desativado perde o acesso imediatamente; cadastro público (`/signup`) desativado; busca global sem erro 500.
+- Zeladoria com situações intermediárias (programada, em execução, aguardando material) e atesto pelo usuário autenticado.
+- Comando `php artisan sigem:preparar-producao` (desativa usuários de demonstração e troca a senha padrão do admin).
+- Testes automatizados (`php vendor/bin/phpunit`): 16 testes de autorização, estoque, numeração e portal.
+
 ## [2.0.0-municipal] - 2026-10-24
 ### Added
 - 🏛️ Rebranding institucional completo para **Phoenix - SIGEM** (*Sistema Integrado de Gestão Municipal*).

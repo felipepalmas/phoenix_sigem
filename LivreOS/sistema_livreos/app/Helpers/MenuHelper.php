@@ -15,278 +15,185 @@
 
 namespace App\Helpers;
 
+
+/**
+ * Menu do Phoenix SIGEM (padrão "SIGEM Clean").
+ *
+ * - Grupos por finalidade (Atendimento, Recursos, Cadastros, Administração).
+ * - Itens são links diretos; as páginas internas de cada módulo aparecem como
+ *   abas no topo da tela (getModuleTabs), não como sanfonas no menu.
+ * - Plugins continuam podendo acrescentar itens pelo filtro 'menu.items'
+ *   (aparecem no grupo "Extensões").
+ */
 class MenuHelper
 {
-    public static function getMainNavItems()
+    /**
+     * Grupos do menu lateral.
+     *
+     * Cada item: ['name', 'icon', 'path', 'match' => [padrões request()->is()], 'external' => bool]
+     * ou ['name', 'icon', 'subItems' => [...]] (apenas Configurações e extensões).
+     */
+    public static function getMenuGroups()
     {
-        $items = [
-            [
-                'icon' => 'dashboard',
-                'name' => 'Dashboard',
-                'subItems' => [
-                    ['name' => 'Início', 'path' => '/'],
-                ],
-            ],
-        ];
+        $groups = [];
 
-        // Adicionar menus operacionais (admin ou roles com acesso operacional)
-        if (auth()->check() && auth()->user()->canAccessOperational()) {
-            $items[] = [
-                'icon' => 'support-ticket',
-                'name' => 'Ajuda',
-                'subItems' => [
-                    ['name' => 'Central de Ajuda', 'path' => '/ajuda', 'pro' => false],
-                    ['name' => 'Plugins (Guia Dev)', 'path' => '/ajuda/plugins', 'pro' => false],
-                ],
-            ];
-            $user = auth()->user();
-            $canViewClients = $user->hasPermission('view-clients');
-            $canCreateClients = $user->hasPermission('create-clients');
-            if ($canViewClients || $canCreateClients) {
-                $clientesSub = [];
-                if ($canViewClients) {
-                    $clientesSub[] = ['name' => 'Listar ' . termo('cliente', true), 'path' => '/clientes', 'pro' => false];
-                }
-                if ($canCreateClients) {
-                    $clientesSub[] = ['name' => 'Novo ' . termo('cliente'), 'path' => '/clientes/create', 'pro' => false];
-                }
-                $items[] = ['name' => termo('cliente', true), 'icon' => 'user-profile', 'subItems' => $clientesSub];
-            }
-
-            // Módulo Municipal: Secretarias, Departamentos e Setores
-            if ($user->is_admin || $user->hasPermission('view-clients') || $user->hasPermission('manage-users')) {
-                $setorSub = [
-                    ['name' => 'Secretarias e Departamentos', 'path' => '/secretarias', 'pro' => false],
-                    ['name' => 'Novo Setor / Secretaria', 'path' => '/secretarias/create', 'pro' => false],
-                ];
-                $items[] = ['name' => 'Secretarias e Setores', 'icon' => 'home', 'subItems' => $setorSub];
-            }
-
-            // Módulo Zero Papel: Protocolo e Tramitação Digital
-            if ($user->is_admin || $user->hasPermission('view-clients') || $user->hasPermission('view-os-history')) {
-                $protocoloSub = [
-                    ['name' => 'Processos em Tramitação', 'path' => '/protocolo', 'pro' => false],
-                    ['name' => 'Autuar Novo Processo', 'path' => '/protocolo/novo', 'pro' => false],
-                ];
-                $items[] = ['name' => 'Protocolo (Zero Papel)', 'icon' => 'page', 'subItems' => $protocoloSub];
-            }
-
-            $canViewProducts = $user->hasPermission('view-products');
-            $canCreateProducts = $user->hasPermission('create-products');
-            if ($canViewProducts || $canCreateProducts) {
-                $produtosSub = [
-                    ['name' => 'Requisições de Materiais', 'path' => '/almoxarifado/requisicoes', 'pro' => false],
-                    ['name' => 'Nova Requisição', 'path' => '/almoxarifado/requisicoes/nova', 'pro' => false],
-                    ['name' => 'Kardex / Movimentações', 'path' => '/almoxarifado/movimentacoes', 'pro' => false],
-                ];
-                if ($canViewProducts) {
-                    $produtosSub[] = ['name' => 'Itens de ' . termo('material', false), 'path' => '/produtos', 'pro' => false];
-                    $produtosSub[] = ['name' => 'Categorias de Materiais', 'path' => '/categorias-produtos', 'pro' => false];
-                    $produtosSub[] = ['name' => 'Almoxarifados Setoriais', 'path' => '/depositos', 'pro' => false];
-                    $produtosSub[] = ['name' => 'Fornecedores Homologados', 'path' => '/fornecedores', 'pro' => false];
-                }
-                if ($canCreateProducts) {
-                    $produtosSub[] = ['name' => 'Cadastrar ' . termo('material'), 'path' => '/produtos/create', 'pro' => false];
-                }
-                $items[] = ['name' => termo('material', true) . ' / Almoxarifado', 'icon' => 'task', 'subItems' => $produtosSub];
-            }
-
-            $canViewServices = $user->hasPermission('view-services');
-            $canCreateServices = $user->hasPermission('create-services');
-            if ($canViewServices || $canCreateServices) {
-                $servicosSub = [];
-                if ($canViewServices) {
-                    $servicosSub[] = ['name' => 'Catálogo de ' . termo('servico', true), 'path' => '/servicos', 'pro' => false];
-                    $servicosSub[] = ['name' => 'Categorias de ' . termo('servico', true), 'path' => '/categorias-servicos', 'pro' => false];
-                }
-                if ($canCreateServices) {
-                    $servicosSub[] = ['name' => 'Novo ' . termo('servico'), 'path' => '/servicos/create', 'pro' => false];
-                }
-                $items[] = ['name' => termo('servico', true), 'icon' => 'task', 'subItems' => $servicosSub];
-            }
-
-            $canAccessPedidosVenda = ($user->is_admin || $user->hasPermission('view-pedidos-venda')) && config('modulos.vendas', false);
-            $canAccessPropostas    = ($user->is_admin || $user->hasPermission('view-propostas-comerciais')) && config('modulos.vendas', false);
-            if ($canAccessPedidosVenda || $canAccessPropostas) {
-                $vendaSub = [];
-                if ($canAccessPedidosVenda) {
-                    $vendaSub[] = ['name' => 'Listar Pedidos', 'path' => '/pedidos-venda', 'pro' => false];
-                    if ($user->is_admin || $user->hasPermission('create-pedidos-venda')) {
-                        $vendaSub[] = ['name' => 'Novo Pedido', 'path' => '/pedidos-venda/create', 'pro' => false];
-                    }
-                }
-                if ($canAccessPropostas) {
-                    $vendaSub[] = ['name' => 'Propostas comerciais', 'path' => '/propostas-comerciais', 'pro' => false];
-                    if ($user->is_admin || $user->hasPermission('create-propostas-comerciais')) {
-                        $vendaSub[] = ['name' => 'Nova proposta', 'path' => '/propostas-comerciais/create', 'pro' => false];
-                    }
-                    if ($user->is_admin || $user->hasPermission('manage-proposta-documento-modelos')) {
-                        $vendaSub[] = ['name' => 'Modelos de proposta (Word/HTML)', 'path' => '/propostas-comerciais/modelos-documento', 'pro' => false];
-                    }
-                }
-                if (function_exists('apply_filters')) {
-                    $vendaSub = apply_filters('menu.pedidos_venda.subitems', $vendaSub, $user);
-                }
-                $items[] = [
-                    'name'     => 'Vendas',
-                    'icon'     => 'shopping-bag',
-                    'subItems' => $vendaSub,
-                ];
-            }
-
-            $canAccessOs = $user->is_admin || $user->hasPermission('view-os-history');
-            if ($canAccessOs) {
-                $items[] = [
-                    'name' => 'Zeladoria & Serviços Urbanos',
-                    'icon' => 'task',
-                    'subItems' => [
-                        ['name' => 'Painel de Zeladoria & Mapa', 'path' => '/zeladoria', 'pro' => false],
-                        ['name' => 'Nova Demanda de Zeladoria', 'path' => '/zeladoria/nova', 'pro' => false],
-                        ['name' => 'Todas as Ordens de Serviço', 'path' => '/ordens-servico', 'pro' => false],
-                        ['name' => 'Modelos de Checklist / Vistoria', 'path' => '/checklist-models', 'pro' => false],
-                    ],
-                ];
-            }
-
-            // Módulo D: Frota Municipal, Diário de Bordo e Motoristas
-            $canAccessFrota = $user->canAccessOperational();
-            if ($canAccessFrota) {
-                $items[] = [
-                    'name' => 'Frota Municipal & Garagem',
-                    'icon' => 'task',
-                    'subItems' => [
-                        ['name' => 'Painel Geral da Frota', 'path' => '/frota', 'pro' => false],
-                        ['name' => 'Cadastrar Novo Veículo', 'path' => '/frota/novo-veiculo', 'pro' => false],
-                        ['name' => 'Diário de Bordo (Viagens)', 'path' => '/frota/diario-bordo', 'pro' => false],
-                        ['name' => 'Motoristas & Alertas CNH', 'path' => '/frota/motoristas', 'pro' => false],
-                    ],
-                ];
-            }
-
-            // Portal do Cidadão & Transparência Pública (Acesso Externo)
-            $items[] = [
-                'name' => 'Portal do Cidadão (Web)',
-                'icon' => 'globe',
-                'subItems' => [
-                    ['name' => 'Acessar Portal Público', 'path' => '/portal', 'pro' => false],
-                    ['name' => 'Consultar Processo Web', 'path' => '/portal/processos', 'pro' => false],
-                    ['name' => 'Ouvidoria & Zeladoria', 'path' => '/portal/zeladoria/nova', 'pro' => false],
-                    ['name' => 'Validador de Autenticidade', 'path' => '/portal/autenticidade', 'pro' => false],
-                ],
-            ];
-
-            $canAccessFinanceiro = ($user->is_admin || $user->hasPermission('access-financeiro')) && config('modulos.financeiro', false);
-            if ($canAccessFinanceiro) {
-                $items[] = [
-                'name' => 'Financeiro',
-                'icon' => 'charts',
-                'subItems' => [
-                    ['name' => 'Dashboard Financeiro', 'path' => '/financeiro/dashboard', 'pro' => false],
-                    ['name' => 'Contas a Receber', 'path' => '/financeiro/contas-receber', 'pro' => false],
-                    ['name' => 'Recebimento Recorrente', 'path' => '/financeiro/contas-receber?aba=recorrentes', 'pro' => false],
-                    ['name' => 'Testar recorrência e reajuste', 'path' => '/financeiro/tarefas-recorrentes', 'pro' => false],
-                    ['name' => 'Contas a Pagar', 'path' => '/financeiro/contas-pagar', 'pro' => false],
-                    ['name' => 'Movimentações', 'path' => '/financeiro/movimentacoes', 'pro' => false],
-                    ['name' => 'Transferência entre contas', 'path' => '/financeiro/transferencias', 'pro' => false],
-                    ['name' => 'Contas Bancárias', 'path' => '/financeiro/contas-bancarias', 'pro' => false],
-                    ['name' => 'Formas de Pagamento', 'path' => '/financeiro/formas-pagamento', 'pro' => false],
-                    ['name' => 'Adquirentes', 'path' => '/financeiro/adquirentes', 'pro' => false],
-                    ['name' => 'Simulador de Transações', 'path' => '/financeiro/simulador', 'pro' => false],
-                    ['name' => 'Plano de Contas', 'path' => '/financeiro/plano-contas', 'pro' => false],
-                    ['name' => 'Centros de Custo', 'path' => '/financeiro/centros-custo', 'pro' => false],
-                    ['name' => 'Configurações Financeiro', 'path' => '/financeiro/configuracoes', 'pro' => false],
-                    ['name' => 'Relatórios e Inteligência', 'path' => '/financeiro/relatorios', 'pro' => false],
-                    ['name' => 'Fluxo de Caixa', 'path' => '/financeiro/fluxo-caixa', 'pro' => false],
-                    ['name' => 'DRE', 'path' => '/financeiro/dre', 'pro' => false],
-                ],
-            ];
-            }
-
-            // Menu Admin — exibir se is_admin ou tiver alguma permissão de admin
-            $showAdminMenu = auth()->user()->is_admin
-                || auth()->user()->hasPermission('view-dashboard')
-                || auth()->user()->hasPermission('manage-users')
-                || auth()->user()->hasPermission('manage-roles')
-                || auth()->user()->hasPermission('manage-permissions');
-            if ($showAdminMenu) {
-                $adminSubItems = [];
-                if (auth()->user()->is_admin || auth()->user()->hasPermission('view-dashboard')) {
-                    $adminSubItems[] = ['name' => 'Dashboard Admin', 'path' => '/admin/dashboard', 'pro' => false];
-                }
-                if (auth()->user()->is_admin || auth()->user()->hasPermission('manage-users')) {
-                    $adminSubItems[] = ['name' => 'Usuários', 'path' => '/admin/users', 'pro' => false];
-                }
-                if (auth()->user()->is_admin || auth()->user()->hasPermission('manage-roles')) {
-                    $adminSubItems[] = ['name' => 'Roles', 'path' => '/admin/roles', 'pro' => false];
-                }
-                if (auth()->user()->is_admin || auth()->user()->hasPermission('manage-permissions')) {
-                    $adminSubItems[] = ['name' => 'Permissões', 'path' => '/admin/permissions', 'pro' => false];
-                }
-                if (auth()->user()->is_admin) {
-                    $adminSubItems[] = ['name' => 'Histórico Cancelamentos/Exclusões', 'path' => '/admin/audit-cancelar-excluir', 'pro' => false];
-                    $adminSubItems[] = ['name' => 'Auditoria de Login e Acessos', 'path' => '/admin/audit-login', 'pro' => false];
-                    $adminSubItems[] = ['name' => 'Auditoria de Acesso a Cidadãos (LGPD)', 'path' => '/admin/audit-acesso-clientes', 'pro' => false];
-                    $adminSubItems[] = ['name' => 'Auditoria de Processos Sigilosos (LAI)', 'path' => '/admin/audit-processos-sigilosos', 'pro' => false];
-                    if (config('modulos.financeiro', false)) {
-                        $adminSubItems[] = ['name' => 'Auditoria Financeira', 'path' => '/admin/audit-financeiro', 'pro' => false];
-                    }
-                }
-                if (count($adminSubItems) > 0) {
-                    $items[] = [
-                        'name' => 'Admin',
-                        'icon' => 'user-profile',
-                        'subItems' => $adminSubItems,
-                    ];
-                }
-            }
-
-            $configSubItems = [
-                ['name' => 'Configurações do Sistema', 'path' => '/configuracoes-sistema', 'pro' => false],
-                ['name' => 'Cadastro da entidade / órgão', 'path' => '/configuracoes-sistema/empresa', 'pro' => false],
-                ['name' => 'Cadastro de Tags', 'path' => '/tags', 'pro' => false],
-            ];
-            if (config('modulos.financeiro', false)) {
-                $configSubItems[] = ['name' => 'Plano de Contas e Centro de Custo - OS', 'path' => '/configuracoes-sistema/plano-conta-os', 'pro' => false];
-            }
-            $configSubItems[] = ['name' => 'Notificações de OS', 'path' => '/configuracoes-sistema/notificacoes-os', 'pro' => false];
-            $configSubItems[] = ['name' => 'Fila de E-mails e Notificações', 'path' => '/configuracoes-sistema/fila-notificacoes', 'pro' => false];
-            $configSubItems[] = ['name' => 'Status das Ordens de Serviço', 'path' => '/configuracoes-sistema/status-os', 'pro' => false];
-            if (config('modulos.garantias', false)) {
-                $configSubItems[] = ['name' => 'Termos de Garantia', 'path' => '/configuracoes-sistema/termos-garantia', 'pro' => false];
-            }
-            if (auth()->user()->is_admin) {
-                $configSubItems[] = ['name' => 'Numeração das OS', 'path' => '/configuracoes-sistema/numeracao-os', 'pro' => false];
-                if (config('modulos.vendas', false)) {
-                    $configSubItems[] = ['name' => 'Limites de Desconto', 'path' => '/configuracoes-sistema/limites-desconto', 'pro' => false];
-                }
-                $configSubItems[] = ['name' => 'Produtos e Estoque', 'path' => '/configuracoes-sistema/produtos-estoque', 'pro' => false];
-                $configSubItems[] = ['name' => 'Tarefas Agendadas', 'path' => '/configuracoes-sistema/tarefas-agendadas', 'pro' => false];
-                $configSubItems[] = ['name' => 'Utilidades', 'path' => '/configuracoes-sistema/utilidades', 'pro' => false];
-            }
-            if (auth()->user()->is_admin || auth()->user()->hasPermission('manage-plugins')) {
-                $configSubItems[] = ['name' => 'Plugins', 'path' => '/configuracoes-sistema/plugins', 'pro' => false];
-            }
-            $optionsPages = class_exists(\App\Services\PluginSettingsRegistry::class)
-                ? \App\Services\PluginSettingsRegistry::instance()->getOptionsPages()
-                : [];
-            foreach ($optionsPages as $page) {
-                try {
-                    $configSubItems[] = ['name' => $page['menu_title'], 'path' => route($page['route']), 'pro' => false];
-                } catch (\Throwable) {
-                }
-            }
-            $items[] = [
-                'name' => 'Configurações',
-                'icon' => 'forms',
-                'subItems' => $configSubItems,
-            ];
+        if (! auth()->check()) {
+            return $groups;
         }
 
+        $user = auth()->user();
+
+        $groups[] = ['title' => '', 'items' => [
+            ['name' => 'Início', 'icon' => 'inicio', 'path' => '/', 'match' => ['/', 'dashboard']],
+        ]];
+
+        if (! $user->canAccessOperational()) {
+            return self::aplicarFiltros($groups);
+        }
+
+        // Todo servidor com acesso operacional usa Protocolo, Zeladoria, requisições e frota
+        // (as rotas exigem apenas 'operational'; as ações são controladas por lotação e permissão).
+
+        // Atendimento ---------------------------------------------------------
+        $groups[] = ['title' => 'Atendimento', 'items' => [
+            ['name' => 'Protocolo', 'icon' => 'protocolo', 'path' => '/protocolo', 'match' => ['protocolo', 'protocolo/*']],
+            ['name' => 'Zeladoria', 'icon' => 'zeladoria', 'path' => '/zeladoria', 'match' => ['zeladoria', 'zeladoria/*', 'ordens-servico', 'ordens-servico/*', 'checklist-models', 'checklist-models/*']],
+        ]];
+
+        // Recursos -------------------------------------------------------------
+        $recursos = [];
+        $recursos[] = ['name' => 'Almoxarifado', 'icon' => 'almoxarifado', 'path' => '/almoxarifado/requisicoes', 'match' => ['almoxarifado', 'almoxarifado/*', 'depositos', 'depositos/*', 'fornecedores', 'fornecedores/*']];
+        $recursos[] = ['name' => 'Frota', 'icon' => 'frota', 'path' => '/frota', 'match' => ['frota', 'frota/*']];
+        $groups[] = ['title' => 'Recursos', 'items' => $recursos];
+
+        // Cadastros ------------------------------------------------------------
+        $cadastros = [];
+        if ($user->hasPermission('view-clients') || $user->hasPermission('create-clients')) {
+            $cadastros[] = ['name' => termo('cliente', true, true), 'icon' => 'cidadaos', 'path' => '/clientes', 'match' => ['clientes', 'clientes/*', 'grupos-economicos', 'grupos-economicos/*']];
+        }
+        if ($user->is_admin || $user->hasPermission('view-clients') || $user->hasPermission('manage-users')) {
+            $cadastros[] = ['name' => 'Secretarias', 'icon' => 'secretarias', 'path' => '/secretarias', 'match' => ['secretarias', 'secretarias/*', 'centros-custo', 'centros-custo/*']];
+        }
+        if ($user->hasPermission('view-products') || $user->hasPermission('view-services')) {
+            $cadastros[] = ['name' => 'Materiais e serviços', 'icon' => 'materiais', 'path' => $user->hasPermission('view-products') ? '/produtos' : '/servicos', 'match' => ['produtos', 'produtos/*', 'categorias-produtos', 'categorias-produtos/*', 'servicos', 'servicos/*', 'categorias-servicos', 'categorias-servicos/*']];
+        }
+        if ($cadastros) {
+            $groups[] = ['title' => 'Cadastros', 'items' => $cadastros];
+        }
+
+        // Módulos comerciais herdados (só aparecem se reativados em config/modulos.php)
+        $legado = [];
+        if (config('modulos.vendas', false) && ($user->is_admin || $user->hasPermission('view-pedidos-venda'))) {
+            $legado[] = ['name' => 'Vendas', 'icon' => 'materiais', 'path' => '/pedidos-venda', 'match' => ['pedidos-venda', 'pedidos-venda/*', 'propostas-comerciais', 'propostas-comerciais/*']];
+        }
+        if (config('modulos.financeiro', false) && ($user->is_admin || $user->hasPermission('access-financeiro'))) {
+            $legado[] = ['name' => 'Financeiro', 'icon' => 'charts', 'path' => '/financeiro/dashboard', 'match' => ['financeiro', 'financeiro/*']];
+        }
+        if ($legado) {
+            $groups[] = ['title' => 'Módulos herdados', 'items' => $legado];
+        }
+
+        // Administração ---------------------------------------------------------
+        $admin = [];
+        if ($user->is_admin || $user->hasPermission('manage-users') || $user->hasPermission('manage-roles') || $user->hasPermission('manage-permissions')) {
+            $destino = ($user->is_admin || $user->hasPermission('manage-users')) ? '/admin/users'
+                : (($user->hasPermission('manage-roles')) ? '/admin/roles' : '/admin/permissions');
+            $admin[] = ['name' => 'Usuários e permissões', 'icon' => 'admin', 'path' => $destino, 'match' => ['admin/users', 'admin/users/*', 'admin/roles', 'admin/roles/*', 'admin/permissions', 'admin/permissions/*']];
+        }
+        if ($user->is_admin) {
+            $admin[] = ['name' => 'Auditoria', 'icon' => 'auditoria', 'path' => '/admin/audit-login', 'match' => ['admin/audit-*', 'admin/audit-*/*', 'admin/dashboard']];
+        }
+        $admin[] = ['name' => 'Configurações', 'icon' => 'config', 'subItems' => self::configuracoes($user)];
+        $groups[] = ['title' => 'Administração', 'items' => $admin];
+
+        return self::aplicarFiltros($groups);
+    }
+
+    /**
+     * Links do rodapé do menu (fora dos grupos).
+     */
+    public static function getFooterItems(): array
+    {
+        $itens = [
+            ['name' => 'Portal do cidadão', 'icon' => 'portal', 'path' => '/portal', 'external' => true],
+        ];
+        if (auth()->check() && auth()->user()->canAccessOperational()) {
+            $itens[] = ['name' => 'Ajuda', 'icon' => 'ajuda', 'path' => '/ajuda', 'match' => ['ajuda', 'ajuda/*']];
+        }
+
+        return $itens;
+    }
+
+    protected static function configuracoes($user): array
+    {
+        $sub = [
+            ['name' => 'Geral', 'path' => '/configuracoes-sistema'],
+            ['name' => 'Dados da Prefeitura', 'path' => '/configuracoes-sistema/empresa'],
+            ['name' => 'Etiquetas (tags)', 'path' => '/tags'],
+            ['name' => 'Situações das OS', 'path' => '/configuracoes-sistema/status-os'],
+            ['name' => 'Notificações de OS', 'path' => '/configuracoes-sistema/notificacoes-os'],
+            ['name' => 'Fila de e-mails', 'path' => '/configuracoes-sistema/fila-notificacoes'],
+        ];
+        if (config('modulos.financeiro', false)) {
+            $sub[] = ['name' => 'Plano de contas da OS', 'path' => '/configuracoes-sistema/plano-conta-os'];
+        }
+        if (config('modulos.garantias', false)) {
+            $sub[] = ['name' => 'Termos de garantia', 'path' => '/configuracoes-sistema/termos-garantia'];
+        }
+        if ($user->is_admin) {
+            $sub[] = ['name' => 'Numeração das OS', 'path' => '/configuracoes-sistema/numeracao-os'];
+            if (config('modulos.vendas', false)) {
+                $sub[] = ['name' => 'Limites de desconto', 'path' => '/configuracoes-sistema/limites-desconto'];
+            }
+            $sub[] = ['name' => 'Estoque', 'path' => '/configuracoes-sistema/produtos-estoque'];
+            $sub[] = ['name' => 'Tarefas agendadas', 'path' => '/configuracoes-sistema/tarefas-agendadas'];
+            $sub[] = ['name' => 'Utilidades', 'path' => '/configuracoes-sistema/utilidades'];
+        }
+        if ($user->is_admin || $user->hasPermission('manage-plugins')) {
+            $sub[] = ['name' => 'Plugins', 'path' => '/configuracoes-sistema/plugins'];
+        }
+        $optionsPages = class_exists(\App\Services\PluginSettingsRegistry::class)
+            ? \App\Services\PluginSettingsRegistry::instance()->getOptionsPages()
+            : [];
+        foreach ($optionsPages as $page) {
+            try {
+                $sub[] = ['name' => $page['menu_title'], 'path' => route($page['route'], [], false)];
+            } catch (\Throwable) {
+            }
+        }
+
+        return $sub;
+    }
+
+    /**
+     * Itens acrescentados por plugins vão para o grupo "Extensões"; o filtro 'menu.groups' continua valendo.
+     */
+    protected static function aplicarFiltros(array $groups): array
+    {
         if (function_exists('do_action')) {
-            do_action('menu.items.before', $items);
+            do_action('menu.items.before', []);
+        }
+        $extras = function_exists('apply_filters') ? apply_filters('menu.items', []) : [];
+        if (is_array($extras) && count($extras) > 0) {
+            $groups[] = ['title' => 'Extensões', 'items' => array_values($extras)];
         }
         if (function_exists('apply_filters')) {
-            $items = apply_filters('menu.items', $items);
+            $groups = apply_filters('menu.groups', $groups);
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Compatibilidade: lista plana de itens (usada por código legado/plugins).
+     */
+    public static function getMainNavItems()
+    {
+        $items = [];
+        foreach (self::getMenuGroups() as $g) {
+            foreach ($g['items'] as $i) {
+                $items[] = $i;
+            }
         }
 
         return $items;
@@ -297,29 +204,154 @@ class MenuHelper
         return [];
     }
 
-    public static function getMenuGroups()
+    /**
+     * O item (ou algum subitem) corresponde à página atual?
+     */
+    public static function itemAtivo(array $item): bool
     {
-        $groups = [
-            [
-                'title' => 'Menu',
-                'items' => self::getMainNavItems()
-            ],
-        ];
+        if (! empty($item['subItems'])) {
+            foreach ($item['subItems'] as $sub) {
+                if (self::isActive($sub['path'])) {
+                    return true;
+                }
+            }
 
-        if (function_exists('apply_filters')) {
-            $groups = apply_filters('menu.groups', $groups);
+            return false;
+        }
+        foreach ($item['match'] ?? [ltrim($item['path'] ?? '', '/') ?: '/'] as $padrao) {
+            if ($padrao === '/' ? request()->path() === '/' : request()->is($padrao)) {
+                return true;
+            }
         }
 
-        return $groups;
+        return false;
+    }
+
+    /**
+     * Abas internas do módulo atual (exibidas no topo do conteúdo pelo layout).
+     *
+     * @return array<int, array{name: string, path: string, active: bool}>
+     */
+    public static function getModuleTabs(): array
+    {
+        if (! auth()->check()) {
+            return [];
+        }
+        $user = auth()->user();
+        $abas = [];
+
+        if (request()->is('almoxarifado', 'almoxarifado/*', 'depositos', 'depositos/*', 'fornecedores', 'fornecedores/*')) {
+            $abas = [
+                ['name' => 'Requisições', 'path' => '/almoxarifado/requisicoes', 'match' => ['almoxarifado/requisicoes', 'almoxarifado/requisicoes/*']],
+                ['name' => 'Movimentações (Kardex)', 'path' => '/almoxarifado/movimentacoes', 'match' => ['almoxarifado/movimentacoes', 'almoxarifado/movimentacoes/*']],
+            ];
+            if ($user->is_admin) {
+                $abas[] = ['name' => 'Almoxarifados', 'path' => '/depositos', 'match' => ['depositos', 'depositos/*']];
+            }
+            if ($user->hasPermission('view-products')) {
+                $abas[] = ['name' => 'Fornecedores', 'path' => '/fornecedores', 'match' => ['fornecedores', 'fornecedores/*']];
+            }
+        } elseif (request()->is('frota', 'frota/*')) {
+            $abas = [
+                ['name' => 'Veículos', 'path' => '/frota', 'match' => ['frota', 'frota/veiculos/*', 'frota/novo-veiculo']],
+                ['name' => 'Diário de bordo', 'path' => '/frota/diario-bordo', 'match' => ['frota/diario-bordo', 'frota/diario-bordo/*']],
+                ['name' => 'Motoristas', 'path' => '/frota/motoristas', 'match' => ['frota/motoristas', 'frota/motoristas/*']],
+            ];
+        } elseif (request()->is('zeladoria', 'zeladoria/*', 'ordens-servico', 'ordens-servico/*', 'checklist-models', 'checklist-models/*')) {
+            $abas = [
+                ['name' => 'Demandas de zeladoria', 'path' => '/zeladoria', 'match' => ['zeladoria', 'zeladoria/*']],
+            ];
+            if ($user->is_admin || $user->hasPermission('view-os-history')) {
+                $abas[] = ['name' => 'Todas as ordens de serviço', 'path' => '/ordens-servico', 'match' => ['ordens-servico', 'ordens-servico/*']];
+                $abas[] = ['name' => 'Modelos de vistoria', 'path' => '/checklist-models', 'match' => ['checklist-models', 'checklist-models/*']];
+            }
+        } elseif (request()->is('produtos', 'produtos/*', 'categorias-produtos', 'categorias-produtos/*', 'servicos', 'servicos/*', 'categorias-servicos', 'categorias-servicos/*')) {
+            if ($user->hasPermission('view-products')) {
+                $abas[] = ['name' => 'Materiais', 'path' => '/produtos', 'match' => ['produtos', 'produtos/*']];
+                $abas[] = ['name' => 'Categorias de materiais', 'path' => '/categorias-produtos', 'match' => ['categorias-produtos', 'categorias-produtos/*']];
+            }
+            if ($user->hasPermission('view-services')) {
+                $abas[] = ['name' => 'Serviços públicos', 'path' => '/servicos', 'match' => ['servicos', 'servicos/*']];
+                $abas[] = ['name' => 'Categorias de serviços', 'path' => '/categorias-servicos', 'match' => ['categorias-servicos', 'categorias-servicos/*']];
+            }
+        } elseif (request()->is('admin/users', 'admin/users/*', 'admin/roles', 'admin/roles/*', 'admin/permissions', 'admin/permissions/*')) {
+            if ($user->is_admin || $user->hasPermission('manage-users')) {
+                $abas[] = ['name' => 'Usuários', 'path' => '/admin/users', 'match' => ['admin/users', 'admin/users/*']];
+            }
+            if ($user->is_admin || $user->hasPermission('manage-roles')) {
+                $abas[] = ['name' => 'Perfis', 'path' => '/admin/roles', 'match' => ['admin/roles', 'admin/roles/*']];
+            }
+            if ($user->is_admin || $user->hasPermission('manage-permissions')) {
+                $abas[] = ['name' => 'Permissões', 'path' => '/admin/permissions', 'match' => ['admin/permissions', 'admin/permissions/*']];
+            }
+        } elseif ($user->is_admin && request()->is('admin/audit-*', 'admin/audit-*/*', 'admin/dashboard')) {
+            $abas = [
+                ['name' => 'Logins', 'path' => '/admin/audit-login', 'match' => ['admin/audit-login*']],
+                ['name' => 'Acesso a cidadãos (LGPD)', 'path' => '/admin/audit-acesso-clientes', 'match' => ['admin/audit-acesso-clientes*']],
+                ['name' => 'Processos sigilosos (LAI)', 'path' => '/admin/audit-processos-sigilosos', 'match' => ['admin/audit-processos-sigilosos*']],
+                ['name' => 'Cancelamentos e exclusões', 'path' => '/admin/audit-cancelar-excluir', 'match' => ['admin/audit-cancelar-excluir*']],
+                ['name' => 'Painel técnico', 'path' => '/admin/dashboard', 'match' => ['admin/dashboard']],
+            ];
+            if (config('modulos.financeiro', false)) {
+                $abas[] = ['name' => 'Financeiro', 'path' => '/admin/audit-financeiro', 'match' => ['admin/audit-financeiro*']];
+            }
+        }
+
+        foreach ($abas as &$aba) {
+            $aba['active'] = false;
+            foreach ($aba['match'] as $padrao) {
+                if (request()->is($padrao)) {
+                    $aba['active'] = true;
+                    break;
+                }
+            }
+        }
+
+        return count($abas) > 1 ? $abas : [];
     }
 
     public static function isActive($path)
     {
-        return request()->is(ltrim($path, '/'));
+        $path = parse_url((string) $path, PHP_URL_PATH) ?: '/';
+        $limpo = ltrim($path, '/');
+
+        return $limpo === '' ? request()->path() === '/' : request()->is($limpo);
+    }
+
+    /**
+     * Ícones do padrão SIGEM (traço 1.8, herdam a cor do texto).
+     */
+    public static function getSigemIcon(string $nome): ?string
+    {
+        $p = [
+            'inicio' => '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+            'protocolo' => '<path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+            'zeladoria' => '<path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/>',
+            'almoxarifado' => '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+            'frota' => '<path d="M3 16V7h11v9M14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+            'cidadaos' => '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
+            'secretarias' => '<path d="M4 21V5l8-2v18M12 8h8v13M4 21h17M8 8h1M8 12h1M8 16h1M16 12h1M16 16h1"/>',
+            'materiais' => '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/>',
+            'admin' => '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
+            'auditoria' => '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/>',
+            'config' => '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+            'portal' => '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+            'ajuda' => '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01"/>',
+            'caixa' => '<path d="M3 13l3-8h12l3 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h5l1 3h6l1-3h5"/>',
+        ];
+
+        if (! isset($p[$nome])) {
+            return null;
+        }
+
+        return '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' . $p[$nome] . '</svg>';
     }
 
     public static function getIconSvg($iconName)
     {
+        if ($sigem = self::getSigemIcon((string) $iconName)) {
+            return $sigem;
+        }
         $icons = [
             'dashboard' => '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.5 3.25C4.25736 3.25 3.25 4.25736 3.25 5.5V8.99998C3.25 10.2426 4.25736 11.25 5.5 11.25H9C10.2426 11.25 11.25 10.2426 11.25 8.99998V5.5C11.25 4.25736 10.2426 3.25 9 3.25H5.5ZM4.75 5.5C4.75 5.08579 5.08579 4.75 5.5 4.75H9C9.41421 4.75 9.75 5.08579 9.75 5.5V8.99998C9.75 9.41419 9.41421 9.74998 9 9.74998H5.5C5.08579 9.74998 4.75 9.41419 4.75 8.99998V5.5ZM5.5 12.75C4.25736 12.75 3.25 13.7574 3.25 15V18.5C3.25 19.7426 4.25736 20.75 5.5 20.75H9C10.2426 20.75 11.25 19.7427 11.25 18.5V15C11.25 13.7574 10.2426 12.75 9 12.75H5.5ZM4.75 15C4.75 14.5858 5.08579 14.25 5.5 14.25H9C9.41421 14.25 9.75 14.5858 9.75 15V18.5C9.75 18.9142 9.41421 19.25 9 19.25H5.5C5.08579 19.25 4.75 18.9142 4.75 18.5V15ZM12.75 5.5C12.75 4.25736 13.7574 3.25 15 3.25H18.5C19.7426 3.25 20.75 4.25736 20.75 5.5V8.99998C20.75 10.2426 19.7426 11.25 18.5 11.25H15C13.7574 11.25 12.75 10.2426 12.75 8.99998V5.5ZM15 4.75C14.5858 4.75 14.25 5.08579 14.25 5.5V8.99998C14.25 9.41419 14.5858 9.74998 15 9.74998H18.5C18.9142 9.74998 19.25 9.41419 19.25 8.99998V5.5C19.25 5.08579 18.9142 4.75 18.5 4.75H15ZM15 12.75C13.7574 12.75 12.75 13.7574 12.75 15V18.5C12.75 19.7426 13.7574 20.75 15 20.75H18.5C19.7426 20.75 20.75 19.7427 20.75 18.5V15C20.75 13.7574 19.7426 12.75 18.5 12.75H15ZM14.25 15C14.25 14.5858 14.5858 14.25 15 14.25H18.5C18.9142 14.25 19.25 14.5858 19.25 15V18.5C19.25 18.9142 18.9142 19.25 18.5 19.25H15C14.5858 19.25 14.25 18.9142 14.25 18.5V15Z" fill="currentColor"></path></svg>',
 

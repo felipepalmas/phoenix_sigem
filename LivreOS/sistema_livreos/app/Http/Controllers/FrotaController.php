@@ -19,17 +19,68 @@ use App\Models\Veiculo;
 use App\Models\Viagem;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class FrotaController extends Controller
 {
     /**
-     * Painel Geral da Frota Municipal (Centro de Controle de Veículos e Garagem)
+     * Quem pode cadastrar veículos e credenciar motoristas.
+     */
+    private function podeGerenciar(): bool
+    {
+        $user = auth()->user();
+
+        return $user && ($user->ehGestorGeral() || $user->hasPermission('frota.gerenciar'));
+    }
+
+    /**
+     * Motoristas com CNH vencida ou vencendo em até 30 dias (alerta da frota).
+     */
+    private function alertasCnh(): array
+    {
+        $lista = Motorista::with('user')
+            ->whereNotNull('cnh_validade')
+            ->where('cnh_validade', '<=', Carbon::today()->addDays(30)->endOfDay())
+            ->orderBy('cnh_validade')
+            ->get();
+
+        return [
+            'vencidas' => $lista->filter(fn (Motorista $m) => $m->isCnhVencida())->values(),
+            'vencendo' => $lista->reject(fn (Motorista $m) => $m->isCnhVencida())->values(),
+        ];
+    }
+
+    /**
+     * Veículos da frota: lista densa com recortes por situação.
      */
     public function index(Request $request)
     {
-        $query = Veiculo::with(['unidadeAdministrativa', 'motoristaResponsavel'])
-            ->where('ativo', true)
-            ->latest('id');
+        $base = Veiculo::where('ativo', true);
+
+        $recortes = [
+            'todos' => ['Todos', fn ($q) => $q],
+            'disponiveis' => ['Disponíveis', fn ($q) => $q->where('status', 'disponivel')],
+            'em_viagem' => ['Em viagem', fn ($q) => $q->where('status', 'em_viagem')],
+            'manutencao' => ['Em manutenção', fn ($q) => $q->whereIn('status', ['em_manutencao', 'inoperante'])],
+            'baixados' => ['Baixados', fn ($q) => $q->where('status', 'baixado')],
+        ];
+        $recorte = array_key_exists((string) $request->input('recorte'), $recortes) ? $request->input('recorte') : 'todos';
+
+        $abas = [];
+        foreach ($recortes as $chave => [$rotulo, $filtro]) {
+            $total = $filtro(clone $base)->count();
+            if ($chave === 'baixados' && $total === 0) {
+                continue;
+            }
+            $abas[] = [
+                'name' => $rotulo,
+                'path' => route('frota.index', ['recorte' => $chave]),
+                'active' => $chave === $recorte,
+                'count' => $total,
+            ];
+        }
+
+        $query = $recortes[$recorte][1]((clone $base)->with(['unidadeAdministrativa', 'motoristaResponsavel']));
 
         if ($request->filled('busca')) {
             $busca = $request->input('busca');
@@ -45,40 +96,22 @@ class FrotaController extends Controller
             $query->where('tipo', $request->input('tipo'));
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->input('status'));
-        }
-
         if ($request->filled('secretaria_id')) {
             $query->where('unidade_administrativa_id', $request->input('secretaria_id'));
         }
 
-        $veiculos = $query->paginate(12)->withQueryString();
+        $veiculos = $query->orderBy('placa')->paginate(20)->withQueryString();
 
-        // KPIs Estratégicos da Frota
-        $kpis = [
-            'total' => Veiculo::where('ativo', true)->count(),
-            'disponiveis' => Veiculo::where('ativo', true)->where('status', 'disponivel')->count(),
-            'em_viagem' => Veiculo::where('ativo', true)->where('status', 'em_viagem')->count(),
-            'em_manutencao' => Veiculo::where('ativo', true)->whereIn('status', ['em_manutencao', 'inoperante'])->count(),
-        ];
-
-        // Alertas de CNH
-        $motoristasCnhAlerta = Motorista::with('user')
-            ->where('cnh_validade', '<=', Carbon::now()->addDays(30))
-            ->orderBy('cnh_validade')
-            ->get();
-
-        // Viagens ativas no momento
-        $viagensAtivas = Viagem::with(['veiculo', 'motorista.user', 'unidadeAdministrativa'])
-            ->where('situacao', 'em_andamento')
-            ->latest('data_saida')
-            ->take(6)
-            ->get();
-
-        $secretarias = UnidadeAdministrativa::where('ativo', true)->orderBy('sigla')->get();
-
-        return view('frota.index', compact('veiculos', 'kpis', 'motoristasCnhAlerta', 'viagensAtivas', 'secretarias'));
+        return erp_view('frota.index', [
+            'title' => 'Frota',
+            'veiculos' => $veiculos,
+            'abas' => $abas,
+            'recorte' => $recorte,
+            'alertasCnh' => $this->alertasCnh(),
+            'secretarias' => UnidadeAdministrativa::where('ativo', true)->orderBy('sigla')->get(),
+            'filtrosAtivos' => collect($request->only(['busca', 'tipo', 'secretaria_id']))->filter()->isNotEmpty(),
+            'podeGerenciar' => $this->podeGerenciar(),
+        ]);
     }
 
     /**
@@ -86,10 +119,14 @@ class FrotaController extends Controller
      */
     public function create()
     {
+        if (! auth()->user()->ehGestorGeral() && ! auth()->user()->hasPermission('frota.gerenciar')) {
+            return redirect()->route('frota.index')->with('error', 'Seu perfil não tem permissão para gerenciar a frota (cadastro de veículos e motoristas).');
+        }
+
         $secretarias = UnidadeAdministrativa::where('ativo', true)->orderBy('sigla')->get();
         $motoristas = Motorista::with('user')->where('status', 'apto')->get();
 
-        return view('frota.create', compact('secretarias', 'motoristas'));
+        return erp_view('frota.create', ['title' => 'Novo veículo'] + compact('secretarias', 'motoristas'));
     }
 
     /**
@@ -97,14 +134,18 @@ class FrotaController extends Controller
      */
     public function store(Request $request)
     {
+        if (! auth()->user()->ehGestorGeral() && ! auth()->user()->hasPermission('frota.gerenciar')) {
+            return redirect()->route('frota.index')->with('error', 'Seu perfil não tem permissão para gerenciar a frota (cadastro de veículos e motoristas).');
+        }
+
         $validated = $request->validate([
             'placa' => 'required|string|max:10|unique:veiculos,placa',
             'modelo' => 'required|string|max:100',
             'marca' => 'required|string|max:60',
             'ano_fabricacao' => 'required|integer|min:1970|max:2030',
             'ano_modelo' => 'required|integer|min:1970|max:2030',
-            'tipo' => 'required|string|max:40',
-            'combustivel' => 'required|string|max:30',
+            'tipo' => ['required', 'string', Rule::in(array_keys(Veiculo::TIPOS))],
+            'combustivel' => ['required', 'string', Rule::in(array_keys(Veiculo::COMBUSTIVEIS))],
             'renavam' => 'nullable|string|max:30',
             'chassi' => 'nullable|string|max:40',
             'patrimonio_tombamento' => 'nullable|string|max:40',
@@ -113,20 +154,27 @@ class FrotaController extends Controller
             'capacidade_tanque' => 'nullable|numeric|min:0',
             'capacidade_passageiros' => 'nullable|integer|min:1',
             'observacoes' => 'nullable|string',
+        ], [
+            'placa.unique' => 'Já existe um veículo cadastrado com esta placa.',
+            'tipo.in' => 'Selecione um tipo de veículo da lista.',
+            'combustivel.in' => 'Selecione um combustível da lista.',
         ]);
 
-        $validated['placa'] = strtoupper(trim($validated['placa']));
+        $validated['placa'] = strtoupper(str_replace(['-', ' '], '', trim($validated['placa'])));
+        if (! empty($validated['chassi'])) {
+            $validated['chassi'] = strtoupper(trim($validated['chassi']));
+        }
         $validated['status'] = 'disponivel';
         $validated['ativo'] = true;
 
         $veiculo = Veiculo::create($validated);
 
         return redirect()->route('frota.show', $veiculo)
-            ->with('success', "Veículo {$veiculo->placa} ({$veiculo->modelo}) cadastrado com sucesso na frota municipal!");
+            ->with('success', "Veículo {$veiculo->placa} ({$veiculo->modelo}) cadastrado na frota.");
     }
 
     /**
-     * Ficha do Veículo: Detalhes, Histórico de Viagens e Abastecimentos
+     * Ficha do Veículo: Detalhes, Histórico de Viagens, Abastecimentos e Manutenções
      */
     public function show(Veiculo $veiculo)
     {
@@ -138,9 +186,16 @@ class FrotaController extends Controller
             ->take(15)
             ->get();
 
+        $viagemAtiva = $veiculo->viagens()
+            ->where('situacao', 'em_andamento')
+            ->with('motorista.user')
+            ->latest('data_saida')
+            ->first();
+
         $abastecimentos = $veiculo->abastecimentos()
             ->with('motorista.user')
             ->latest('data')
+            ->latest('id')
             ->take(10)
             ->get();
 
@@ -150,9 +205,23 @@ class FrotaController extends Controller
             ->take(10)
             ->get();
 
-        $motoristasAptos = Motorista::with('user')->where('status', 'apto')->get();
+        $motoristas = Motorista::with('user')->where('status', 'apto')->get()
+            ->sortBy(fn (Motorista $m) => $m->nome)->values();
 
-        return view('frota.show', compact('veiculo', 'viagens', 'abastecimentos', 'manutencoes', 'motoristasAptos'));
+        return erp_view('frota.show', [
+            'title' => 'Veículo ' . $veiculo->placa,
+            'veiculo' => $veiculo,
+            'viagens' => $viagens,
+            'viagemAtiva' => $viagemAtiva,
+            'abastecimentos' => $abastecimentos,
+            'manutencoes' => $manutencoes,
+            'motoristas' => $motoristas,
+            'podeSair' => $veiculo->ativo && $veiculo->status === 'disponivel',
+            'podeAbastecer' => $veiculo->ativo && $veiculo->status !== 'baixado',
+            'totalViagens' => $veiculo->viagens()->count(),
+            'totalAbastecimentos' => $veiculo->abastecimentos()->count(),
+            'totalManutencoes' => $veiculo->manutencoes()->count(),
+        ]);
     }
 
     /**
@@ -160,8 +229,27 @@ class FrotaController extends Controller
      */
     public function viagensIndex(Request $request)
     {
-        $query = Viagem::with(['veiculo', 'motorista.user', 'unidadeAdministrativa', 'solicitante'])
-            ->latest('data_saida');
+        $base = Viagem::query();
+
+        $recortes = [
+            'em_andamento' => ['Em andamento', fn ($q) => $q->where('situacao', 'em_andamento')],
+            'concluidas' => ['Concluídas', fn ($q) => $q->where('situacao', 'concluida')],
+            'todas' => ['Todas', fn ($q) => $q],
+        ];
+        $padrao = (clone $base)->where('situacao', 'em_andamento')->exists() ? 'em_andamento' : 'todas';
+        $recorte = array_key_exists((string) $request->input('recorte'), $recortes) ? $request->input('recorte') : $padrao;
+
+        $abas = [];
+        foreach ($recortes as $chave => [$rotulo, $filtro]) {
+            $abas[] = [
+                'name' => $rotulo,
+                'path' => route('frota.viagens.index', ['recorte' => $chave]),
+                'active' => $chave === $recorte,
+                'count' => $filtro(clone $base)->count(),
+            ];
+        }
+
+        $query = $recortes[$recorte][1]((clone $base)->with(['veiculo', 'motorista.user', 'unidadeAdministrativa', 'solicitante']));
 
         if ($request->filled('busca')) {
             $busca = $request->input('busca');
@@ -172,19 +260,31 @@ class FrotaController extends Controller
                   ->orWhereHas('veiculo', function ($v) use ($busca) {
                       $v->where('placa', 'like', "%{$busca}%")
                         ->orWhere('modelo', 'like', "%{$busca}%");
-                  });
+                  })
+                  ->orWhereHas('motorista.user', fn ($u) => $u->where('name', 'like', "%{$busca}%"));
             });
         }
 
-        if ($request->filled('situacao')) {
-            $query->where('situacao', $request->input('situacao'));
-        }
+        $viagens = $query
+            ->orderByRaw("CASE WHEN situacao = 'em_andamento' THEN 0 ELSE 1 END")
+            ->latest('data_saida')
+            ->paginate(20)
+            ->withQueryString();
 
-        $viagens = $query->paginate(15)->withQueryString();
-        $veiculosDisponiveis = Veiculo::where('ativo', true)->where('status', 'disponivel')->orderBy('modelo')->get();
-        $motoristasAptos = Motorista::with('user')->where('status', 'apto')->get();
+        $veiculosDisponiveis = Veiculo::where('ativo', true)->where('status', 'disponivel')->orderBy('placa')->get();
+        $motoristas = Motorista::with('user')->where('status', 'apto')->get()
+            ->sortBy(fn (Motorista $m) => $m->nome)->values();
 
-        return view('frota.viagens.index', compact('viagens', 'veiculosDisponiveis', 'motoristasAptos'));
+        return erp_view('frota.viagens.index', [
+            'title' => 'Diário de bordo',
+            'viagens' => $viagens,
+            'abas' => $abas,
+            'recorte' => $recorte,
+            'filtrosAtivos' => $request->filled('busca'),
+            'veiculosDisponiveis' => $veiculosDisponiveis,
+            'motoristas' => $motoristas,
+            'secretarias' => UnidadeAdministrativa::where('ativo', true)->orderBy('sigla')->get(),
+        ]);
     }
 
     /**
@@ -207,13 +307,13 @@ class FrotaController extends Controller
         if ($veiculo->status !== 'disponivel') {
             return redirect()->back()
                 ->withInput()
-                ->with('error', "O veículo {$veiculo->placa} não está disponível para iniciar viagem. Situação atual: {$veiculo->status_formatado}.");
+                ->withErrors(['veiculo_id' => "O veículo {$veiculo->placa} não está disponível para sair (situação atual: {$veiculo->status_formatado})."]);
         }
 
         if ($validated['km_saida'] < $veiculo->km_atual) {
             return redirect()->back()
                 ->withInput()
-                ->with('error', "Hodômetro de saída ({$validated['km_saida']} km) não pode ser inferior ao hodômetro atual registrado do veículo ({$veiculo->km_atual} km).");
+                ->withErrors(['km_saida' => "O hodômetro de saída ({$validated['km_saida']} {$veiculo->unidade_medida}) não pode ser menor que o atual do veículo ({$veiculo->hodometro_formatado})."]);
         }
 
         $motorista = Motorista::findOrFail($validated['motorista_id']);
@@ -221,16 +321,24 @@ class FrotaController extends Controller
         if ($motorista->status !== 'apto') {
             return redirect()->back()
                 ->withInput()
-                ->with('error', "O motorista selecionado não está apto para conduzir (Situação: {$motorista->status_formatado}).");
+                ->withErrors(['motorista_id' => "O motorista selecionado não está apto para conduzir (situação: {$motorista->status_formatado})."]);
         }
 
         if ($motorista->isCnhVencida()) {
             return redirect()->back()
                 ->withInput()
-                ->with('error', "O motorista selecionado está com a CNH vencida ({$motorista->cnh_validade->format('d/m/Y')}). Registro de saída bloqueado.");
+                ->withErrors(['motorista_id' => "O motorista selecionado está com a CNH vencida desde {$motorista->cnh_validade->format('d/m/Y')}. Saída não registrada."]);
         }
 
         $viagem = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $veiculo, $request) {
+            // Trava o veículo: duas saídas simultâneas não podem passar pela checagem de disponibilidade
+            $travado = Veiculo::whereKey($veiculo->id)->lockForUpdate()->first();
+            if (! $travado || $travado->status !== 'disponivel') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'veiculo_id' => 'O veículo acabou de sair em outra viagem ou não está disponível.',
+                ]);
+            }
+
             $novaViagem = Viagem::create([
                 'numero' => Viagem::gerarProximoNumero(),
                 'veiculo_id' => $veiculo->id,
@@ -258,7 +366,7 @@ class FrotaController extends Controller
             return $novaViagem;
         });
 
-        return redirect()->back()->with('success', "Saída registrada com sucesso! Viagem {$viagem->numero} em andamento.");
+        return redirect()->back()->with('success', "Saída registrada: viagem {$viagem->numero} em andamento com o veículo {$veiculo->placa}.");
     }
 
     /**
@@ -267,12 +375,14 @@ class FrotaController extends Controller
     public function viagensRetorno(Request $request, Viagem $viagem)
     {
         if ($viagem->situacao !== 'em_andamento') {
-            return redirect()->back()->with('error', "A viagem {$viagem->numero} não pode ser concluída pois se encontra no status '{$viagem->situacao_formatada}'.");
+            return redirect()->back()->with('error', "A viagem {$viagem->numero} não pode ser concluída: situação atual \"{$viagem->situacao_formatada}\".");
         }
 
         $validated = $request->validate([
             'km_retorno' => "required|integer|min:{$viagem->km_saida}",
             'ocorrencias' => 'nullable|string',
+        ], [
+            'km_retorno.min' => "O hodômetro de retorno não pode ser menor que o de saída ({$viagem->km_saida}).",
         ]);
 
         try {
@@ -288,7 +398,7 @@ class FrotaController extends Controller
             return redirect()->back()->with('error', $e->getMessage());
         }
 
-        return redirect()->back()->with('success', "Viagem {$viagem->numero} concluída! Veículo {$viagem->veiculo->placa} disponível na garagem.");
+        return redirect()->back()->with('success', "Retorno registrado: viagem {$viagem->numero} concluída ({$viagem->km_percorrido} {$viagem->veiculo->unidade_medida} percorridos). Veículo {$viagem->veiculo->placa} disponível.");
     }
 
     /**
@@ -311,16 +421,20 @@ class FrotaController extends Controller
 
         $veiculo = Veiculo::findOrFail($validated['veiculo_id']);
 
-        if ($veiculo->capacidade_tanque && $validated['litros'] > $veiculo->capacidade_tanque) {
+        $capacidade = (float) $veiculo->capacidade_tanque;
+        if ($capacidade > 0 && (float) $validated['litros'] > $capacidade) {
+            $litros = number_format((float) $validated['litros'], 2, ',', '.');
+            $tanque = number_format($capacidade, 2, ',', '.');
+
             return redirect()->back()
                 ->withInput()
-                ->with('error', "A quantidade de litros informada ({$validated['litros']} L) excede a capacidade máxima do tanque do veículo ({$veiculo->capacidade_tanque} L). Abastecimento bloqueado por suspeita de inconformidade.");
+                ->withErrors(['litros' => "A quantidade informada ({$litros} L) é maior que a capacidade do tanque do veículo {$veiculo->placa} ({$tanque} L). Confira o cupom fiscal: se houve abastecimento em galões ou de outro veículo, registre-o separadamente."]);
         }
 
         if ($validated['km_veiculo'] < $veiculo->km_atual) {
             return redirect()->back()
                 ->withInput()
-                ->with('error', "Hodômetro informado ({$validated['km_veiculo']} km) não pode ser inferior ao hodômetro atual registrado do veículo ({$veiculo->km_atual} km).");
+                ->withErrors(['km_veiculo' => "O hodômetro informado ({$validated['km_veiculo']} {$veiculo->unidade_medida}) não pode ser menor que o atual do veículo ({$veiculo->hodometro_formatado})."]);
         }
 
         $ultimoAbastecimento = $veiculo->abastecimentos()->latest('data')->first();
@@ -357,7 +471,10 @@ class FrotaController extends Controller
             }
         });
 
-        return redirect()->back()->with('success', 'Abastecimento registrado com sucesso! Consumo médio calculado: ' . ($consumoMedio ? "{$consumoMedio} km/l" : 'Primeiro registro'));
+        $totalFmt = number_format($valorTotal, 2, ',', '.');
+        $consumoFmt = $consumoMedio ? number_format($consumoMedio, 2, ',', '.') . ' ' . $veiculo->unidade_medida . '/L' : null;
+
+        return redirect()->back()->with('success', "Abastecimento registrado (R$ {$totalFmt})." . ($consumoFmt ? " Consumo desde o último abastecimento: {$consumoFmt}." : ' Primeiro abastecimento do veículo: o consumo será calculado a partir do próximo.'));
     }
 
     /**
@@ -365,13 +482,23 @@ class FrotaController extends Controller
      */
     public function motoristasIndex()
     {
-        $motoristas = Motorista::with('user')->latest('id')->paginate(15);
-        $usuariosDisponiveis = User::whereDoesntHave('motorista')
-            ->where('ativo', true)
-            ->orderBy('name')
-            ->get();
+        $motoristas = Motorista::with('user')
+            ->withCount(['viagens as viagens_em_andamento_count' => fn ($q) => $q->where('situacao', 'em_andamento')])
+            ->orderBy('cnh_validade')
+            ->paginate(20);
 
-        return view('frota.motoristas.index', compact('motoristas', 'usuariosDisponiveis'));
+        $podeGerenciar = $this->podeGerenciar();
+        $usuariosDisponiveis = $podeGerenciar
+            ? User::whereDoesntHave('motorista')->where('ativo', true)->orderBy('name')->get()
+            : collect();
+
+        return erp_view('frota.motoristas.index', [
+            'title' => 'Motoristas',
+            'motoristas' => $motoristas,
+            'usuariosDisponiveis' => $usuariosDisponiveis,
+            'alertasCnh' => $this->alertasCnh(),
+            'podeGerenciar' => $podeGerenciar,
+        ]);
     }
 
     /**
@@ -379,19 +506,24 @@ class FrotaController extends Controller
      */
     public function motoristasStore(Request $request)
     {
+        if (! auth()->user()->ehGestorGeral() && ! auth()->user()->hasPermission('frota.gerenciar')) {
+            return redirect()->route('frota.index')->with('error', 'Seu perfil não tem permissão para gerenciar a frota (cadastro de veículos e motoristas).');
+        }
+
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id|unique:motoristas,user_id',
             'cnh_numero' => 'required|string|max:30|unique:motoristas,cnh_numero',
             'cnh_categoria' => 'required|string|max:10',
             'cnh_validade' => 'required|date',
             'cursos_obrigatorios' => 'nullable|array',
+            'cursos_obrigatorios.*' => ['string', Rule::in(array_keys(Motorista::CURSOS))],
             'observacoes' => 'nullable|string',
         ]);
 
         $validated['status'] = 'apto';
 
-        Motorista::create($validated);
+        $motorista = Motorista::create($validated);
 
-        return redirect()->back()->with('success', 'Motorista oficial credenciado com sucesso no sistema!');
+        return redirect()->back()->with('success', "Motorista {$motorista->load('user')->nome} credenciado.");
     }
 }

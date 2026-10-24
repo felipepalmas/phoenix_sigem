@@ -1,259 +1,133 @@
 {{--
  * Componente da aplicação Phoenix - SIGEM
- * Módulo B: Zeladoria Urbana e Serviços Públicos Municipais
- * Abertura de Demanda com Geolocalização e Foto Inicial
+ * Zeladoria — registro de nova demanda com marcação no mapa (padrão SIGEM Clean)
  *
  * @license AGPL-3.0
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="mb-6 flex items-center justify-between">
-    <div>
-        <div class="flex items-center gap-2 text-sm text-gray-500 mb-1">
-            <a href="{{ route('zeladoria.index') }}" class="hover:underline">Zeladoria Municipal</a>
-            <span>/</span>
-            <span>Nova Demanda</span>
-        </div>
-        <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Registrar Demanda de Zeladoria Urbana</h1>
-        <p class="text-sm text-gray-600 dark:text-gray-400">Abertura de chamado de campo para manutenção de vias, praças, iluminação ou prédios públicos</p>
-    </div>
-    <a href="{{ route('zeladoria.index') }}" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
-        Voltar ao Painel
-    </a>
-</div>
+<x-sigem.page-header title="Nova demanda de zeladoria" subtitle="Registre o pedido recebido no balcão, telefone 156, ouvidoria ou fiscalização."
+    :breadcrumbs="['Zeladoria' => route('zeladoria.index'), 'Nova demanda' => null]" />
 
-@if ($errors->any())
-<div class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
-    <p class="font-bold mb-1">Por favor, corrija os erros abaixo:</p>
-    <ul class="list-disc pl-5 space-y-1">
-        @foreach ($errors->all() as $error)
-            <li>{{ $error }}</li>
-        @endforeach
-    </ul>
-</div>
-@endif
+<x-sigem.flash />
 
-<form action="{{ route('zeladoria.store') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
+<form method="POST" action="{{ route('zeladoria.store') }}" enctype="multipart/form-data" class="flex max-w-5xl flex-col gap-5">
     @csrf
 
-    <!-- Card 1: Requerente & Classificação do Serviço -->
-    <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-        <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-900 dark:text-brand-300">1</span>
-            Classificação do Serviço & Solicitante
-        </h2>
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-                <label for="cliente_id" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Cidadão / Solicitante <span class="text-red-500">*</span>
-                </label>
-                <select id="cliente_id" name="cliente_id" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    <option value="">-- Selecione o Cidadão --</option>
-                    @foreach($cidadaos as $c)
-                    <option value="{{ $c->id }}" {{ old('cliente_id') == $c->id ? 'selected' : '' }}>
-                        {{ $c->nome }} ({{ $c->documento_principal ?? 'Sem Doc' }})
-                    </option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label for="categoria_zeladoria_id" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Tipo de Serviço Público / Zeladoria <span class="text-red-500">*</span>
-                </label>
-                <select id="categoria_zeladoria_id" name="categoria_zeladoria_id" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    <option value="">-- Selecione a Categoria --</option>
+    <x-sigem.card title="O que é e quem pediu" id="t-oque">
+        <div class="grid gap-4 md:grid-cols-2">
+            <x-sigem.field label="Serviço" for="categoria_zeladoria_id" required>
+                <select id="categoria_zeladoria_id" name="categoria_zeladoria_id" required class="sigem-input">
+                    <option value="">Selecione o serviço</option>
                     @foreach($categorias as $cat)
-                    <option value="{{ $cat->id }}" {{ old('categoria_zeladoria_id') == $cat->id ? 'selected' : '' }}>
-                        {{ $cat->nome }} (Prazo: {{ $cat->prazo_padrao_dias }} dias)
-                    </option>
+                        <option value="{{ $cat->id }}" @selected((string) old('categoria_zeladoria_id') === (string) $cat->id)>{{ $cat->nome }}</option>
                     @endforeach
                 </select>
-            </div>
-
-            <div>
-                <label for="secretaria_responsavel_id" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Secretaria Executora
-                </label>
-                <select id="secretaria_responsavel_id" name="secretaria_responsavel_id" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    <option value="">-- Automático (Conforme Categoria) --</option>
-                    @foreach($secretarias as $sec)
-                    <option value="{{ $sec->id }}" {{ old('secretaria_responsavel_id') == $sec->id ? 'selected' : '' }}>
-                        {{ $sec->nome_completo }}
-                    </option>
+            </x-sigem.field>
+            <x-sigem.field label="Solicitante" for="cliente_id" required help="Cidadão já cadastrado.">
+                <select id="cliente_id" name="cliente_id" required class="sigem-input">
+                    <option value="">Selecione o cidadão</option>
+                    @foreach($cidadaos as $c)
+                        <option value="{{ $c->id }}" @selected((string) old('cliente_id') === (string) $c->id)>{{ $c->nome ?: $c->razao_social }}</option>
                     @endforeach
                 </select>
-            </div>
-
-            <div>
-                <label for="prioridade" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Grau de Prioridade <span class="text-red-500">*</span>
-                </label>
-                <select id="prioridade" name="prioridade" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    <option value="normal" {{ old('prioridade', 'normal') === 'normal' ? 'selected' : '' }}>Normal (Fluxo Padrão)</option>
-                    <option value="urgente" {{ old('prioridade') === 'urgente' ? 'selected' : '' }}>Urgente (Risco Moderado)</option>
-                    <option value="emergencial" {{ old('prioridade') === 'emergencial' ? 'selected' : '' }}>Emergencial (Risco à Vida / Interdição)</option>
-                    <option value="baixa" {{ old('prioridade') === 'baixa' ? 'selected' : '' }}>Baixa</option>
+            </x-sigem.field>
+            <x-sigem.field label="Como chegou" for="origem_demanda" required>
+                <select id="origem_demanda" name="origem_demanda" required class="sigem-input">
+                    @foreach(['balcao' => 'Balcão (presencial)', 'telefone_156' => 'Telefone 156', 'ouvidoria' => 'Ouvidoria', 'fiscalizacao' => 'Fiscalização / ronda', 'portal' => 'Portal do Cidadão'] as $v => $r)
+                        <option value="{{ $v }}" @selected(old('origem_demanda', 'balcao') === $v)>{{ $r }}</option>
+                    @endforeach
                 </select>
-            </div>
-
-            <div>
-                <label for="origem_demanda" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Canal / Origem do Chamado <span class="text-red-500">*</span>
-                </label>
-                <select id="origem_demanda" name="origem_demanda" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    <option value="balcao" {{ old('origem_demanda', 'balcao') === 'balcao' ? 'selected' : '' }}>Presencial / Balcão</option>
-                    <option value="telefone_156" {{ old('origem_demanda') === 'telefone_156' ? 'selected' : '' }}>Central Telefônica / 156</option>
-                    <option value="ouvidoria" {{ old('origem_demanda') === 'ouvidoria' ? 'selected' : '' }}>Ouvidoria Geral</option>
-                    <option value="fiscalizacao" {{ old('origem_demanda') === 'fiscalizacao' ? 'selected' : '' }}>Fiscalização Interna / Ronda</option>
-                    <option value="portal" {{ old('origem_demanda') === 'portal' ? 'selected' : '' }}>Portal do Cidadão</option>
+            </x-sigem.field>
+            <x-sigem.field label="Prioridade" for="prioridade" required>
+                <select id="prioridade" name="prioridade" required class="sigem-input">
+                    @foreach(['normal' => 'Normal', 'urgente' => 'Urgente (risco moderado)', 'emergencial' => 'Emergencial (risco à vida ou interdição)', 'baixa' => 'Baixa'] as $v => $r)
+                        <option value="{{ $v }}" @selected(old('prioridade', 'normal') === $v)>{{ $r }}</option>
+                    @endforeach
                 </select>
-            </div>
+            </x-sigem.field>
+            <x-sigem.field label="Relato" for="relato_cliente" required class="md:col-span-2" help="Descreva o problema como foi informado.">
+                <textarea id="relato_cliente" name="relato_cliente" rows="3" required minlength="5" class="sigem-input">{{ old('relato_cliente') }}</textarea>
+            </x-sigem.field>
+        </div>
+    </x-sigem.card>
 
-            <div>
-                <label for="processo_id" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Vincular a Protocolo Digital (Zero Papel)
-                </label>
-                <select id="processo_id" name="processo_id" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-                    <option value="">-- Sem vínculo direto --</option>
+    <x-sigem.card title="Onde" id="t-onde" subtitle="Preencha o endereço e, se possível, clique no mapa para marcar o ponto exato.">
+        <div class="grid gap-4 md:grid-cols-6">
+            <x-sigem.field label="Rua / logradouro" for="logradouro" required class="md:col-span-4">
+                <input id="logradouro" name="logradouro" type="text" required maxlength="255" value="{{ old('logradouro') }}" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Número" for="numero_logradouro" class="md:col-span-2">
+                <input id="numero_logradouro" name="numero_logradouro" type="text" maxlength="30" value="{{ old('numero_logradouro') }}" placeholder="S/N" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Bairro" for="bairro" required class="md:col-span-3">
+                <input id="bairro" name="bairro" type="text" required maxlength="100" value="{{ old('bairro') }}" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Ponto de referência" for="referencia_local" class="md:col-span-3">
+                <input id="referencia_local" name="referencia_local" type="text" maxlength="255" value="{{ old('referencia_local') }}" class="sigem-input">
+            </x-sigem.field>
+        </div>
+        <div id="mapaPicker" class="mt-4 h-[300px] w-full rounded-md border border-sigem-line dark:border-gray-800" role="region" aria-label="Mapa para marcar o local"></div>
+        <div class="mt-2 flex flex-wrap items-center gap-3 text-[13px] text-sigem-muted dark:text-gray-400">
+            <span id="coordTexto">{{ old('latitude') ? 'Ponto marcado: ' . old('latitude') . ', ' . old('longitude') : 'Nenhum ponto marcado no mapa.' }}</span>
+            <button type="button" id="limparPonto" class="sigem-link text-[13px] font-normal">Limpar ponto</button>
+        </div>
+        <input type="hidden" id="latitude" name="latitude" value="{{ old('latitude') }}">
+        <input type="hidden" id="longitude" name="longitude" value="{{ old('longitude') }}">
+    </x-sigem.card>
+
+    <x-sigem.card title="Encaminhamento e foto" id="t-enc">
+        <div class="grid gap-4 md:grid-cols-2">
+            <x-sigem.field label="Secretaria responsável" for="secretaria_responsavel_id" help="Se não escolher, vai para a secretaria padrão do serviço.">
+                <select id="secretaria_responsavel_id" name="secretaria_responsavel_id" class="sigem-input">
+                    <option value="">Padrão do serviço</option>
+                    @foreach($secretarias as $s)
+                        <option value="{{ $s->id }}" @selected((string) old('secretaria_responsavel_id') === (string) $s->id)>{{ $s->sigla ? $s->sigla . ' — ' : '' }}{{ $s->nome }}</option>
+                    @endforeach
+                </select>
+            </x-sigem.field>
+            <x-sigem.field label="Processo vinculado" for="processo_id" help="Opcional: quando a demanda nasceu de um processo do Protocolo.">
+                <select id="processo_id" name="processo_id" class="sigem-input">
+                    <option value="">Sem vínculo</option>
                     @foreach($processos as $proc)
-                    <option value="{{ $proc->id }}" {{ old('processo_id') == $proc->id ? 'selected' : '' }}>
-                        Protocolo {{ $proc->numero }} - {{ Str::limit($proc->assunto, 35) }}
-                    </option>
+                        <option value="{{ $proc->id }}" @selected((string) old('processo_id') === (string) $proc->id)>{{ $proc->numero }} — {{ \Illuminate\Support\Str::limit($proc->assunto, 60) }}</option>
                     @endforeach
                 </select>
-            </div>
+            </x-sigem.field>
+            <x-sigem.field label="Foto do local (antes)" for="foto_antes" class="md:col-span-2" help="Imagem até 15 MB.">
+                <input id="foto_antes" name="foto_antes" type="file" accept="image/*" class="sigem-input h-auto py-1.5">
+            </x-sigem.field>
         </div>
-    </div>
+    </x-sigem.card>
 
-    <!-- Card 2: Endereço & Geolocalização (Clique no Mapa) -->
-    <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-        <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-900 dark:text-brand-300">2</span>
-            Local da Ocorrência & Coordenadas Geográficas
-        </h2>
-        <p class="text-xs text-gray-500 mb-4">Informe o endereço ou clique diretamente no mapa abaixo para capturar as coordenadas exatas.</p>
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-4">
-            <div class="lg:col-span-2">
-                <label for="logradouro" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Logradouro (Rua / Avenida) <span class="text-red-500">*</span>
-                </label>
-                <input type="text" id="logradouro" name="logradouro" value="{{ old('logradouro') }}" required placeholder="Ex: Rua das Palmeiras..." class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-            </div>
-
-            <div>
-                <label for="numero_logradouro" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Número / Km
-                </label>
-                <input type="text" id="numero_logradouro" name="numero_logradouro" value="{{ old('numero_logradouro') }}" placeholder="Ex: 1420 ou S/N" class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-            </div>
-
-            <div>
-                <label for="bairro" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Bairro <span class="text-red-500">*</span>
-                </label>
-                <input type="text" id="bairro" name="bairro" value="{{ old('bairro') }}" required placeholder="Ex: Centro, Bairro Novo..." class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-            </div>
-
-            <div class="sm:col-span-2">
-                <label for="referencia_local" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Ponto de Referência
-                </label>
-                <input type="text" id="referencia_local" name="referencia_local" value="{{ old('referencia_local') }}" placeholder="Ex: Em frente à Escola Municipal, próximo ao posto de combustível..." class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
-            </div>
-
-            <div>
-                <label for="latitude" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Latitude</label>
-                <input type="text" id="latitude" name="latitude" value="{{ old('latitude') }}" readonly class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" placeholder="Clique no mapa">
-            </div>
-
-            <div>
-                <label for="longitude" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Longitude</label>
-                <input type="text" id="longitude" name="longitude" value="{{ old('longitude') }}" readonly class="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" placeholder="Clique no mapa">
-            </div>
-        </div>
-
-        <!-- Seletor no Mapa com Leaflet -->
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <div id="mapaPicker" class="h-64 w-full rounded-lg border border-gray-200 dark:border-gray-700 z-10"></div>
-        <p class="mt-1 text-xs text-gray-500">Dica: navegue e clique no mapa para posicionar o pin no local exato do serviço.</p>
-    </div>
-
-    <!-- Card 3: Descrição e Foto Inicial (Antes) -->
-    <div class="rounded-xl border border-gray-200 bg-white p-6 shadow-theme-xs dark:border-gray-800 dark:bg-gray-800">
-        <h2 class="text-base font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-900 dark:text-brand-300">3</span>
-            Descrição & Registro Fotográfico Inicial (Antes)
-        </h2>
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-                <label for="relato_cliente" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Detalhamento do Problema / Solicitação <span class="text-red-500">*</span>
-                </label>
-                <textarea id="relato_cliente" name="relato_cliente" rows="4" required placeholder="Descreva a extensão do problema (ex: buraco profundo no asfalto com risco de acidentes, lâmpada piscando há 1 semana)..." class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">{{ old('relato_cliente') }}</textarea>
-            </div>
-
-            <div>
-                <label for="foto_antes" class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Foto do Local / Problema (Situação "Antes")
-                </label>
-                <input type="file" id="foto_antes" name="foto_antes" accept="image/*" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100">
-                <p class="mt-2 text-xs text-gray-500">A imagem servirá como comprovação da demanda e será comparada com a foto de conclusão da equipe em campo.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Botões -->
-    <div class="flex items-center justify-end gap-3">
-        <a href="{{ route('zeladoria.index') }}" class="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300">
-            Cancelar
-        </a>
-        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-6 py-2.5 text-sm font-bold text-white shadow hover:bg-brand-700 transition">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-            Registrar Demanda e Emitir OS
-        </button>
+    <div class="flex flex-wrap justify-end gap-2">
+        <x-sigem.button href="{{ route('zeladoria.index') }}">Cancelar</x-sigem.button>
+        <x-sigem.button type="submit" variant="primary">Registrar demanda</x-sigem.button>
     </div>
 </form>
+@endsection
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+@push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    var latInput = document.getElementById('latitude');
-    var lngInput = document.getElementById('longitude');
-
-    var initialLat = latInput.value ? parseFloat(latInput.value) : -15.793889;
-    var initialLng = lngInput.value ? parseFloat(lngInput.value) : -47.882778;
-    var zoom = latInput.value ? 15 : 4;
-
-    var mapPicker = L.map('mapaPicker').setView([initialLat, initialLng], zoom);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(mapPicker);
-
-    var marker = null;
-    if (latInput.value && lngInput.value) {
-        marker = L.marker([initialLat, initialLng]).addTo(mapPicker);
-    }
-
-    mapPicker.on('click', function (e) {
-        var lat = e.latlng.lat.toFixed(7);
-        var lng = e.latlng.lng.toFixed(7);
-
-        latInput.value = lat;
-        lngInput.value = lng;
-
-        if (marker) {
-            marker.setLatLng(e.latlng);
-        } else {
-            marker = L.marker(e.latlng).addTo(mapPicker);
-        }
+    if (!window.sigemMapa) return;
+    var lat = document.getElementById('latitude'), lng = document.getElementById('longitude'), texto = document.getElementById('coordTexto');
+    var temPonto = lat.value && lng.value;
+    var mapa = window.sigemMapa('mapaPicker', temPonto ? { centro: [parseFloat(lat.value), parseFloat(lng.value)], zoom: 17 } : {});
+    if (!mapa) return;
+    var marcador = temPonto ? L.marker([parseFloat(lat.value), parseFloat(lng.value)]).addTo(mapa) : null;
+    mapa.on('click', function (e) {
+        lat.value = e.latlng.lat.toFixed(7);
+        lng.value = e.latlng.lng.toFixed(7);
+        texto.textContent = 'Ponto marcado: ' + lat.value + ', ' + lng.value;
+        if (marcador) marcador.setLatLng(e.latlng); else marcador = L.marker(e.latlng).addTo(mapa);
+    });
+    document.getElementById('limparPonto').addEventListener('click', function () {
+        lat.value = ''; lng.value = '';
+        texto.textContent = 'Nenhum ponto marcado no mapa.';
+        if (marcador) { mapa.removeLayer(marcador); marcador = null; }
     });
 });
 </script>
-@endsection
+@endpush

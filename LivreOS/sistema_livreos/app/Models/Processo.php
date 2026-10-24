@@ -23,6 +23,7 @@ class Processo extends Model
 
     protected $fillable = [
         'numero',
+        'chave_acesso',
         'ano',
         'sequencial',
         'interessado_id',
@@ -47,6 +48,27 @@ class Processo extends Model
         'data_conclusao' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (Processo $processo) {
+            if (empty($processo->chave_acesso)) {
+                $processo->chave_acesso = self::novaChaveAcesso();
+            }
+        });
+    }
+
+    /** Chave de 8 caracteres sem letras ambíguas (0/O, 1/I/L), impressa no comprovante. */
+    public static function novaChaveAcesso(): string
+    {
+        $alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+        $chave = '';
+        for ($i = 0; $i < 8; $i++) {
+            $chave .= $alfabeto[random_int(0, strlen($alfabeto) - 1)];
+        }
+
+        return $chave;
+    }
+
     public static function gerarProximoNumero(?int $ano = null): array
     {
         $ano = $ano ?? (int) date('Y');
@@ -62,14 +84,133 @@ class Processo extends Model
         });
     }
 
+    /**
+     * Processos que o usuário pode ver: públicos, os da unidade em que está lotado, os que autuou;
+     * gestor geral e quem tem protocolo.sigiloso veem todos.
+     */
+    public function scopeVisiveisPara($query, ?User $user)
+    {
+        if ($user && ($user->ehGestorGeral() || $user->hasPermission('protocolo.sigiloso'))) {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($user) {
+            $q->where('sigilo', 'publico');
+            if ($user) {
+                $q->orWhere('created_by', $user->id);
+                if ($user->unidade_administrativa_id) {
+                    $q->orWhere('unidade_atual_id', $user->unidade_administrativa_id);
+                }
+            }
+        });
+    }
+
+    public function visivelPara(?User $user): bool
+    {
+        if ($this->sigilo === 'publico') {
+            return true;
+        }
+        if (! $user) {
+            return false;
+        }
+
+        return $user->ehGestorGeral()
+            || $user->hasPermission('protocolo.sigiloso')
+            || (int) $this->created_by === (int) $user->id
+            || $user->lotadoEm($this->unidade_atual_id);
+    }
+
+    /** Assunto para exibição: oculta o de processo restrito/sigiloso a quem não pode vê-lo. */
+    public function assuntoPara(?User $user): string
+    {
+        return $this->visivelPara($user) ? (string) $this->assunto : 'Processo ' . mb_strtolower($this->sigilo_rotulo);
+    }
+
+    /** Situações finais (o processo não volta a tramitar). */
+    public const ENCERRADOS = ['deferido', 'indeferido', 'arquivado', 'concluido'];
+
     public function podeSerTramitado(): bool
     {
-        return $this->status === 'tramitando';
+        // Suspenso pode ser retomado tramitando (ex.: diligência cumprida)
+        return in_array($this->status, ['tramitando', 'suspenso'], true);
+    }
+
+    public function estaEncerrado(): bool
+    {
+        return in_array($this->status, self::ENCERRADOS, true);
+    }
+
+    /** Última tramitação enviada e ainda não recebida na unidade atual. */
+    public function tramitacaoPendente(): ?Tramitacao
+    {
+        return $this->tramitacoes()
+            ->where('status', 'enviado')
+            ->where('unidade_destino_id', $this->unidade_atual_id)
+            ->first();
+    }
+
+    public function aguardaRecebimento(): bool
+    {
+        return ! $this->estaEncerrado() && $this->tramitacaoPendente() !== null;
+    }
+
+    public function getStatusRotuloAttribute(): string
+    {
+        return match ($this->status) {
+            'tramitando' => 'Em tramitação',
+            'deferido' => 'Deferido',
+            'indeferido' => 'Indeferido',
+            'arquivado' => 'Arquivado',
+            'suspenso' => 'Suspenso',
+            'concluido' => 'Concluído',
+            default => ucfirst((string) $this->status),
+        };
+    }
+
+    /** Tom do badge: info | ok | warn | danger | neutral */
+    public function getStatusTomAttribute(): string
+    {
+        return match ($this->status) {
+            'deferido', 'concluido' => 'ok',
+            'indeferido' => 'danger',
+            'suspenso' => 'warn',
+            'arquivado' => 'neutral',
+            default => 'info',
+        };
+    }
+
+    public function getSigiloRotuloAttribute(): string
+    {
+        return match ($this->sigilo) {
+            'publico' => 'Público',
+            'restrito' => 'Restrito',
+            'sigiloso' => 'Sigiloso',
+            default => ucfirst((string) $this->sigilo),
+        };
+    }
+
+    public function getPrioridadeRotuloAttribute(): string
+    {
+        return match ($this->prioridade) {
+            'urgente' => 'Urgente',
+            'baixa' => 'Baixa',
+            default => 'Normal',
+        };
+    }
+
+    /** Dias até o prazo (negativo = vencido); null quando não há prazo ou já encerrou. */
+    public function getDiasParaPrazoAttribute(): ?int
+    {
+        if (! $this->data_limite || $this->estaEncerrado()) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays($this->data_limite->copy()->startOfDay(), false);
     }
 
     public function podeSerConcluido(): bool
     {
-        return $this->status === 'tramitando';
+        return in_array($this->status, ['tramitando', 'suspenso'], true);
     }
 
     public function interessado(): BelongsTo
@@ -144,7 +285,7 @@ class Processo extends Model
     public function receberNaUnidade(int $usuarioRecebimentoId): bool
     {
         return DB::transaction(function () use ($usuarioRecebimentoId) {
-            $ultimaTramitacao = $this->tramitacoes()->where('status', 'enviado')->first();
+            $ultimaTramitacao = $this->tramitacaoPendente();
             if ($ultimaTramitacao) {
                 $ultimaTramitacao->update([
                     'usuario_recebimento_id' => $usuarioRecebimentoId,

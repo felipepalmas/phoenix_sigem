@@ -53,8 +53,8 @@ class Viagem extends Model
     public static function gerarProximoNumero(?int $ano = null): string
     {
         $ano = $ano ?? (int) date('Y');
-        $ultimo = self::whereYear('data_saida', $ano)->count();
-        return sprintf('VIA-%d/%05d', $ano, $ultimo + 1);
+        $proximo = \App\Support\Numerador::proximo('VIA', $ano, fn (int $a) => \App\Support\Numerador::maiorSufixo('viagens', 'numero', "VIA-{$a}/"));
+        return sprintf('VIA-%d/%05d', $ano, $proximo);
     }
 
     public function veiculo(): BelongsTo
@@ -89,7 +89,7 @@ class Viagem extends Model
     public function registrarRetorno(int $kmRetorno, ?string $ocorrencias = null, ?array $checklistRetorno = null): void
     {
         if ($this->situacao !== 'em_andamento') {
-            throw new \DomainException("A viagem {$this->numero} não pode ser concluída pois se encontra no status '{$this->situacao}'.");
+            throw new \DomainException("A viagem {$this->numero} não pode ser concluída: situação atual \"{$this->situacao_formatada}\".");
         }
 
         if ($kmRetorno < $this->km_saida) {
@@ -122,10 +122,42 @@ class Viagem extends Model
     {
         return match ($this->situacao) {
             'agendada' => 'Agendada',
-            'em_andamento' => 'Em Trânsito / Em Andamento',
-            'concluida' => 'Concluída / Retornou',
+            'em_andamento' => 'Em andamento',
+            'concluida' => 'Concluída',
             'cancelada' => 'Cancelada',
-            default => ucfirst(str_replace('_', ' ', $this->situacao)),
+            default => ucfirst(str_replace('_', ' ', (string) $this->situacao)),
+        };
+    }
+
+    /** Itens do checklist (saída e retorno) que não foram marcados como conferidos. */
+    public function getPendenciasChecklistAttribute(): array
+    {
+        $rotulos = [
+            'pneus' => 'pneus na saída',
+            'oleo_agua' => 'óleo e água',
+            'documentos' => 'documentos',
+            'retorno_pneus' => 'pneus no retorno',
+            'veiculo_limpo' => 'limpeza no retorno',
+        ];
+        $itens = array_merge((array) ($this->checklist_saida ?? []), (array) ($this->checklist_retorno ?? []));
+        $pendencias = [];
+        foreach ($itens as $chave => $valor) {
+            if ($valor !== 'ok' && isset($rotulos[$chave])) {
+                $pendencias[] = $rotulos[$chave];
+            }
+        }
+
+        return $pendencias;
+    }
+
+    /** Tom do badge SIGEM (info|ok|warn|danger|neutral). */
+    public function getSituacaoTomAttribute(): string
+    {
+        return match ($this->situacao) {
+            'em_andamento' => 'info',
+            'concluida' => 'ok',
+            'agendada' => 'warn',
+            default => 'neutral',
         };
     }
 

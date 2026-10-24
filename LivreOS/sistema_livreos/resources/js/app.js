@@ -20,6 +20,36 @@ import flatpickr from 'flatpickr';
 import 'flatpickr/dist/flatpickr.min.css';
 // FullCalendar
 import { Calendar } from '@fullcalendar/core';
+// Leaflet (mapas da Zeladoria/Início) empacotado localmente — sem unpkg.com
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png?inline';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png?inline';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png?inline';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
+window.L = L;
+
+/**
+ * Centro padrão dos mapas: Nonoai/RS. Telas com mapa chamam sigemMapa(...) depois do DOMContentLoaded.
+ */
+window.SIGEM_MAPA_CENTRO = [-27.3606, -52.7714];
+window.sigemEsc = function sigemEsc(valor) {
+    const div = document.createElement('div');
+    div.textContent = valor === null || valor === undefined ? '' : String(valor);
+    return div.innerHTML.replace(/"/g, '&quot;');
+};
+window.sigemMapa = function sigemMapa(elementoId, opcoes = {}) {
+    const el = document.getElementById(elementoId);
+    if (!el) return null;
+    const mapa = L.map(el, { scrollWheelZoom: false }).setView(opcoes.centro || window.SIGEM_MAPA_CENTRO, opcoes.zoom || 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap',
+    }).addTo(mapa);
+    return mapa;
+};
 
 
 

@@ -104,22 +104,8 @@ class PortalCidadaoController extends Controller
         $stats = [
             'processos_total' => Processo::count(),
             'processos_concluidos' => Processo::whereIn('status', ['deferido', 'indeferido', 'arquivado', 'concluido'])->count(),
-            'zeladoria_atendida' => OrdemServico::where(function ($q) {
-                $q->whereNotNull('categoria_zeladoria_id')->orWhere('tipo_os', 'Zeladoria Urbana');
-            })->where(function ($q) {
-                $q->where('status', 'like', '%Concluída%')
-                  ->orWhere('status', 'like', '%Executada%')
-                  ->orWhere('status', 'like', '%concluid%');
-            })->count(),
-            'zeladoria_ativa' => OrdemServico::where(function ($q) {
-                $q->whereNotNull('categoria_zeladoria_id')->orWhere('tipo_os', 'Zeladoria Urbana');
-            })->where(function ($q) {
-                $q->where('status', 'like', '%Aberta%')
-                  ->orWhere('status', 'like', '%Registrada%')
-                  ->orWhere('status', 'like', '%Triagem%')
-                  ->orWhere('status', 'like', '%Execução%')
-                  ->orWhere('status', 'like', '%andamento%');
-            })->count(),
+            'zeladoria_atendida' => OrdemServico::whereNotNull('categoria_zeladoria_id')->whereIn('status', \App\Support\StatusZeladoria::CONCLUIDAS)->count(),
+            'zeladoria_ativa' => OrdemServico::whereNotNull('categoria_zeladoria_id')->whereNotIn('status', \App\Support\StatusZeladoria::ENCERRADAS)->count(),
             'veiculos_operacao' => Veiculo::where('ativo', true)->count(),
         ];
 
@@ -152,7 +138,7 @@ class PortalCidadaoController extends Controller
 
         // Se o cidadão digitou um código de zeladoria (ex: ZEL-2026/00001 ou OS-...), redireciona para zeladoria
         if (Str::startsWith(strtoupper($numero), ['ZEL', 'OS-'])) {
-            return redirect()->route('portal.zeladoria.show', $numero);
+            return redirect()->route('portal.zeladoria.show', array_filter(['codigo' => strtoupper($numero), 'chave' => $request->input('chave')]));
         }
 
         // Busca o processo estritamente por número oficial exato (prevenção de enumeração)
@@ -167,13 +153,19 @@ class PortalCidadaoController extends Controller
         ->where('numero', $numero)
         ->first();
 
+        // Número + chave do comprovante (impede varrer 2026/000001, 000002...)
+        $chave = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $request->input('chave', '')));
+        if ($processo && $processo->chave_acesso && ! hash_equals((string) $processo->chave_acesso, $chave)) {
+            $processo = null;
+        }
+
         $termoBuscado = $numero;
 
         if (! $processo) {
             return view('portal.processo-resultado', [
                 'processo' => null,
                 'termoBuscado' => $termoBuscado,
-                'erro' => "Nenhum processo administrativo encontrado com o número \"{$numero}\". Verifique a numeração informada no seu comprovante.",
+                'erro' => "Não encontramos um processo com o número \"{$numero}\" e a chave de acesso informada. Confira os dois dados no seu comprovante de protocolo.",
             ]);
         }
 
@@ -218,6 +210,8 @@ class PortalCidadaoController extends Controller
             'ponto_referencia' => 'nullable|string|max:200',
             'relato_cliente' => 'required|string|min:10',
             'foto' => 'nullable|image|max:10240', // até 10MB
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
         ]);
 
         if (! self::validarCpf($validated['cpf'])) {
@@ -253,8 +247,7 @@ class PortalCidadaoController extends Controller
 
         // Gera código oficial de rastreio consistente (ex: ZEL-2026/00005)
         $ano = (int) date('Y');
-        $proximoSeq = (OrdemServico::whereYear('created_at', $ano)->max('numero_sequencial') ?? 0) + 1;
-        $codigoProtocolo = sprintf('ZEL-%d/%05d', $ano, $proximoSeq);
+        $codigoProtocolo = OrdemServico::gerarCodigoZeladoria($ano);
 
         // Upload da foto antes, se houver
         $fotoAntesPath = null;
@@ -263,8 +256,8 @@ class PortalCidadaoController extends Controller
         }
 
         $demanda = OrdemServico::create([
-            'numero_sequencial' => $proximoSeq,
             'codigo_interno' => $codigoProtocolo,
+            'chave_acesso' => Processo::novaChaveAcesso(),
             'cliente_id' => $cliente->id,
             'tipo_os' => 'Zeladoria Urbana',
             'origem_os' => 'Portal Cidadão',
@@ -280,18 +273,22 @@ class PortalCidadaoController extends Controller
             'origem_demanda' => 'portal',
             'data_abertura' => Carbon::now(),
             'foto_antes' => $fotoAntesPath,
+            'latitude' => $validated['latitude'] ?? null,
+            'longitude' => $validated['longitude'] ?? null,
+            'prevista_conclusao' => now()->addDays($categoria->prazo_padrao_dias ?: 7),
         ]);
 
-        return redirect()->route('portal.zeladoria.show', $codigoProtocolo)
+        return redirect()->route('portal.zeladoria.show', ['codigo' => $codigoProtocolo, 'chave' => $demanda->chave_acesso])
             ->with('success', "Sua solicitação de {$categoria->nome} foi protocolada com sucesso sob o nº {$codigoProtocolo}!");
     }
 
     /**
      * Acompanhamento público em tempo real da demanda de zeladoria pelo munícipe.
      */
-    public function acompanharDemanda(string $codigo)
+    public function acompanharDemanda(Request $request, string $codigo)
     {
         $demanda = OrdemServico::with(['categoriaZeladoria', 'secretariaResponsavel', 'cliente'])
+            ->whereNotNull('categoria_zeladoria_id')
             ->where('codigo_interno', $codigo)
             ->first();
 
@@ -299,9 +296,13 @@ class PortalCidadaoController extends Controller
             return view('portal.zeladoria-status', [
                 'demanda' => null,
                 'codigo' => $codigo,
-                'erro' => "Nenhuma solicitação de serviço público encontrada com o protocolo \"{$codigo}\".",
+                'erro' => "Nenhum pedido de serviço encontrado com o código \"{$codigo}\".",
             ]);
         }
+
+        // Sem a chave do comprovante, mostra só o andamento (sem relato, endereço exato, fotos ou nome)
+        $chave = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $request->input('chave', '')));
+        $completo = $demanda->chave_acesso && $chave !== '' && hash_equals((string) $demanda->chave_acesso, $chave);
 
         // Aplica mascaramento LGPD
         $dadosRequerente = [
@@ -309,7 +310,7 @@ class PortalCidadaoController extends Controller
             'cpf' => self::mascararCpf($demanda->cliente?->cpf ?? $demanda->cliente?->cnpj),
         ];
 
-        return view('portal.zeladoria-status', compact('demanda', 'codigo', 'dadosRequerente'));
+        return view('portal.zeladoria-status', compact('demanda', 'codigo', 'dadosRequerente', 'completo'));
     }
 
     /**

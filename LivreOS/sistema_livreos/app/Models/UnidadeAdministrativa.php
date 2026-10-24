@@ -53,6 +53,12 @@ class UnidadeAdministrativa extends Model
         return $this->belongsTo(User::class, 'responsavel_id');
     }
 
+    /** Servidores lotados nesta unidade. */
+    public function servidores(): HasMany
+    {
+        return $this->hasMany(User::class, 'unidade_administrativa_id');
+    }
+
     public function processosAtuais(): HasMany
     {
         return $this->hasMany(Processo::class, 'unidade_atual_id');

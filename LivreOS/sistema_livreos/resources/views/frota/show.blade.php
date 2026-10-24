@@ -1,619 +1,277 @@
 {{--
  * Componente da aplicação Phoenix - SIGEM
- * Ficha Técnica e Dossiê Completo do Veículo Oficial
+ * Frota — ficha do veículo: viagens, abastecimentos e manutenções (padrão SIGEM Clean)
  *
  * @license AGPL-3.0
  --}}
-
 @extends('layouts.app')
 
 @section('content')
-<div class="space-y-6" x-data="{ modalSaida: false, modalAbastecimento: false, modalRetorno: false, viagemSelecionada: null }">
+@php
+    use App\Models\Veiculo;
+    $painelInicial = old('_painel', '');
+    $un = $veiculo->unidade_medida;
+    $fmtNum = fn ($n, $d = 0) => number_format((float) $n, $d, ',', '.');
+    $fmtMoeda = fn ($n) => 'R$ ' . number_format((float) $n, 2, ',', '.');
+@endphp
 
-    <!-- Mensagens de Flash -->
-    @if(session('success'))
-        <div class="rounded-xl border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-700/60 dark:bg-emerald-900/20">
-            <div class="flex items-center gap-3">
-                <div class="rounded-lg bg-emerald-100 p-2 text-emerald-800 dark:bg-emerald-800/40 dark:text-emerald-300">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                </div>
-                <p class="text-sm font-semibold text-emerald-900 dark:text-emerald-200">{{ session('success') }}</p>
+<div x-data="{ painel: @js($painelInicial) }">
+<x-sigem.page-header :title="$veiculo->placa . ' — ' . $veiculo->marca . ' ' . $veiculo->modelo"
+    :subtitle="$veiculo->tipo_formatado . ' · ' . ($veiculo->unidadeAdministrativa?->nome ?? 'Garagem central')"
+    :breadcrumbs="['Frota' => route('frota.index'), $veiculo->placa => null]">
+    <x-slot:badges>
+        <x-sigem.status :tom="$veiculo->status_tom">{{ $veiculo->status_formatado }}</x-sigem.status>
+        @unless($veiculo->ativo)<x-sigem.status tom="neutral">Inativo</x-sigem.status>@endunless
+    </x-slot:badges>
+    <x-slot:actions>
+        @if($podeSair)
+            <x-sigem.button variant="primary" @click="painel = painel === 'saida' ? '' : 'saida'" ::aria-expanded="painel === 'saida'">Registrar saída</x-sigem.button>
+        @elseif($viagemAtiva)
+            <x-sigem.button variant="primary" @click="painel = painel === 'retorno-{{ $viagemAtiva->id }}' ? '' : 'retorno-{{ $viagemAtiva->id }}'" ::aria-expanded="painel === 'retorno-{{ $viagemAtiva->id }}'">Registrar retorno</x-sigem.button>
+        @endif
+        @if($podeAbastecer)
+            <x-sigem.button @click="painel = painel === 'abastecimento' ? '' : 'abastecimento'" ::aria-expanded="painel === 'abastecimento'">Lançar abastecimento</x-sigem.button>
+        @endif
+    </x-slot:actions>
+</x-sigem.page-header>
+
+<x-sigem.flash />
+
+@if($viagemAtiva)
+    <div class="sigem-alert sigem-alert-info mb-4" role="status">
+        <span>
+            Em viagem desde {{ $viagemAtiva->data_saida?->format('d/m/Y \à\s H:i') }}
+            com {{ $viagemAtiva->motorista?->nome ?? 'motorista não informado' }}, destino <strong>{{ $viagemAtiva->destino }}</strong>
+            (viagem {{ $viagemAtiva->numero }}).
+        </span>
+    </div>
+@elseif(in_array($veiculo->status, ['em_manutencao', 'inoperante'], true))
+    <div class="sigem-alert sigem-alert-warn mb-4" role="status">
+        <span>Veículo {{ mb_strtolower($veiculo->status_formatado) }}: não pode sair até ser liberado.</span>
+    </div>
+@endif
+
+{{-- Painel: registrar saída --}}
+@if($podeSair)
+    @include('frota.partials.form-saida', ['veiculo' => $veiculo, 'motoristas' => $motoristas])
+@endif
+
+{{-- Painel: registrar retorno --}}
+@if($viagemAtiva)
+    <section x-show="painel === 'retorno-{{ $viagemAtiva->id }}'" x-cloak class="sigem-card mb-5 border-sigem-primary" aria-labelledby="t-retorno">
+        <div class="sigem-card-header">
+            <div class="min-w-0 flex-1">
+                <h2 class="sigem-card-title" id="t-retorno">Registrar retorno</h2>
+                <p class="m-0 mt-0.5 text-[13px] text-sigem-muted dark:text-gray-400">Viagem {{ $viagemAtiva->numero }} · {{ $viagemAtiva->destino }}</p>
             </div>
         </div>
-    @endif
+        <div class="sigem-card-body">
+            @include('frota.partials.form-retorno', ['viagem' => $viagemAtiva->setRelation('veiculo', $veiculo)])
+        </div>
+    </section>
+@endif
 
-    <!-- Breadcrumb e Topbar da Viatura -->
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-            <nav class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-1">
-                <a href="{{ route('frota.index') }}" class="hover:text-brand-600 transition">Frota Municipal</a>
-                <span>/</span>
-                <span class="text-gray-900 dark:text-white font-semibold">Ficha Técnica</span>
-            </nav>
-            <div class="flex flex-wrap items-center gap-3">
-                <h1 class="text-2xl font-black text-gray-900 dark:text-white sm:text-3xl">
-                    {{ $veiculo->modelo }}
-                </h1>
-                <span class="inline-flex items-center rounded-lg border border-gray-300 bg-gray-100 px-3 py-1 font-mono text-base font-black text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-xs">
-                    {{ $veiculo->placa }}
-                </span>
-                {!! $veiculo->status_badge !!}
-            </div>
-            <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                {{ $veiculo->marca }} • {{ $veiculo->ano_fabricacao }}/{{ $veiculo->ano_modelo }} • {{ $veiculo->combustivel }}
-                @if($veiculo->unidadeAdministrativa)
-                    • Lotação: <span class="font-bold text-gray-900 dark:text-white">{{ $veiculo->unidadeAdministrativa->sigla ?? $veiculo->unidadeAdministrativa->nome }}</span>
-                @endif
+{{-- Painel: abastecimento --}}
+@if($podeAbastecer)
+<form x-show="painel === 'abastecimento'" x-cloak method="POST" action="{{ route('frota.abastecimentos.store') }}" class="sigem-card mb-5 border-sigem-primary"
+    x-data="{ litros: @js((string) old('litros', '')), valorLitro: @js((string) old('valor_litro', '')) }">
+    @csrf
+    <input type="hidden" name="_painel" value="abastecimento">
+    <input type="hidden" name="veiculo_id" value="{{ $veiculo->id }}">
+    <div class="sigem-card-header">
+        <div class="min-w-0 flex-1">
+            <h2 class="sigem-card-title">Lançar abastecimento</h2>
+            <p class="m-0 mt-0.5 text-[13px] text-sigem-muted dark:text-gray-400">Confira os dados no cupom fiscal do posto.</p>
+        </div>
+    </div>
+    <div class="sigem-card-body flex flex-col gap-4">
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <x-sigem.field label="Data" for="ab_data" :error="$errors->first('data') ?: null" required>
+                <input id="ab_data" name="data" type="date" required max="{{ now()->format('Y-m-d') }}" value="{{ old('data', now()->format('Y-m-d')) }}" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Combustível" for="ab_combustivel" :error="$errors->first('combustivel') ?: null" required>
+                <select id="ab_combustivel" name="combustivel" required class="sigem-input">
+                    @foreach(Veiculo::COMBUSTIVEIS as $valor => $rotulo)
+                        <option value="{{ $valor }}" @selected(old('combustivel', $veiculo->combustivel === 'flex' ? 'gasolina' : $veiculo->combustivel) === $valor)>{{ $rotulo }}</option>
+                    @endforeach
+                </select>
+            </x-sigem.field>
+            <x-sigem.field label="Litros" for="ab_litros" :error="$errors->first('litros') ?: null" required
+                :help="(float) $veiculo->capacidade_tanque > 0 ? 'Tanque de ' . $fmtNum($veiculo->capacidade_tanque, 0) . ' L.' : 'Capacidade do tanque não cadastrada.'">
+                <input id="ab_litros" name="litros" type="number" required step="0.01" min="0.1" @if((float) $veiculo->capacidade_tanque > 0) max="{{ (float) $veiculo->capacidade_tanque }}" @endif
+                    x-model="litros" class="sigem-input tabular-nums @error('litros') sigem-input-invalid @enderror">
+            </x-sigem.field>
+            <x-sigem.field label="Preço por litro (R$)" for="ab_valor_litro" :error="$errors->first('valor_litro') ?: null" required>
+                <input id="ab_valor_litro" name="valor_litro" type="number" required step="0.001" min="0.1" x-model="valorLitro" class="sigem-input tabular-nums">
+            </x-sigem.field>
+            <x-sigem.field label="Hodômetro no abastecimento" for="ab_km" :error="$errors->first('km_veiculo') ?: null" required :help="'Atual: ' . $veiculo->hodometro_formatado . '.'">
+                <input id="ab_km" name="km_veiculo" type="number" required step="1" min="{{ (int) $veiculo->km_atual }}" value="{{ old('km_veiculo', $veiculo->km_atual) }}" class="sigem-input tabular-nums @error('km_veiculo') sigem-input-invalid @enderror">
+            </x-sigem.field>
+            <x-sigem.field label="Posto" for="ab_posto" :error="$errors->first('posto_combustivel') ?: null" required>
+                <input id="ab_posto" name="posto_combustivel" type="text" required maxlength="100" value="{{ old('posto_combustivel') }}" placeholder="Nome do posto contratado" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Nº do cupom ou nota fiscal" for="ab_cupom">
+                <input id="ab_cupom" name="numero_cupom_fiscal" type="text" maxlength="50" value="{{ old('numero_cupom_fiscal') }}" class="sigem-input">
+            </x-sigem.field>
+            <x-sigem.field label="Motorista" for="ab_motorista">
+                <select id="ab_motorista" name="motorista_id" class="sigem-input">
+                    <option value="">Não informado</option>
+                    @foreach($motoristas as $m)
+                        <option value="{{ $m->id }}" @selected((string) old('motorista_id', $viagemAtiva?->motorista_id) === (string) $m->id)>{{ $m->nome }}</option>
+                    @endforeach
+                </select>
+            </x-sigem.field>
+            <x-sigem.field label="Observações" for="ab_obs" class="md:col-span-2 lg:col-span-4">
+                <input id="ab_obs" name="observacoes" type="text" value="{{ old('observacoes') }}" class="sigem-input">
+            </x-sigem.field>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+            <p class="m-0 mr-auto text-sm" aria-live="polite">
+                Total: <strong class="tabular-nums" x-text="(parseFloat(litros) > 0 && parseFloat(valorLitro) > 0) ? (parseFloat(litros) * parseFloat(valorLitro)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'">—</strong>
             </p>
+            <x-sigem.button @click="painel = ''">Cancelar</x-sigem.button>
+            <x-sigem.button type="submit" variant="primary">Lançar abastecimento</x-sigem.button>
         </div>
+    </div>
+</form>
+@endif
 
-        <!-- Botões de Ação Imediata -->
-        <div class="flex flex-wrap items-center gap-2.5">
-            <a href="{{ route('frota.index') }}" class="rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 transition">
-                ← Voltar
-            </a>
-
-            @if($veiculo->status === 'disponivel')
-                <button type="button" @click="modalSaida = true" class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition">
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                    Registrar Saída (Viagem)
-                </button>
-            @elseif($veiculo->status === 'em_viagem')
-                @php $viagemAtiva = $veiculo->viagens()->where('situacao', 'em_andamento')->latest('data_saida')->first(); @endphp
-                @if($viagemAtiva)
-                    <button type="button" @click="viagemSelecionada = {{ $viagemAtiva->id }}; modalRetorno = true" class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-                        Registrar Retorno à Garagem
-                    </button>
-                @endif
+<div class="flex flex-wrap items-start gap-5">
+    <div class="flex min-w-0 flex-[2_1_560px] flex-col gap-5">
+        <x-sigem.card :padded="false" title="Viagens" id="t-viagens" :subtitle="$totalViagens > $viagens->count() ? 'Últimas ' . $viagens->count() . ' de ' . $totalViagens : null">
+            <x-slot:actions>
+                <a href="{{ route('frota.viagens.index', ['recorte' => 'todas', 'busca' => $veiculo->placa]) }}" class="sigem-link text-[13px] font-normal">Ver no diário de bordo</a>
+            </x-slot:actions>
+            @if($viagens->isEmpty())
+                <x-sigem.empty title="Nenhuma viagem registrada" description="As saídas registradas para este veículo aparecem aqui." />
+            @else
+                <x-sigem.table min-width="620px">
+                    <x-slot:head>
+                        <th scope="col">Saída</th>
+                        <th scope="col">Destino, motorista e finalidade</th>
+                        <th scope="col" class="text-right">Percurso</th>
+                        <th scope="col">Situação</th>
+                    </x-slot:head>
+                    @foreach($viagens as $viagem)
+                        <tr>
+                            <td class="whitespace-nowrap">
+                                {{ $viagem->data_saida?->format('d/m/Y H:i') }}
+                                <div class="sigem-muted">{{ $viagem->numero }}</div>
+                            </td>
+                            <td class="max-w-[260px]">
+                                <div class="truncate">{{ $viagem->destino }}</div>
+                                <div class="truncate sigem-muted" title="{{ $viagem->finalidade }}">{{ $viagem->motorista?->nome ?? 'Motorista não informado' }} — {{ $viagem->finalidade }}</div>
+                                @if($viagem->ocorrencias)<div class="truncate text-xs font-semibold text-sigem-warn dark:text-amber-300" title="{{ $viagem->ocorrencias }}">Ocorrência: {{ $viagem->ocorrencias }}</div>@endif
+                            </td>
+                            <td class="whitespace-nowrap text-right tabular-nums">
+                                @if($viagem->km_percorrido !== null && $viagem->situacao === 'concluida')
+                                    {{ $fmtNum($viagem->km_percorrido) }} {{ $un }}
+                                    <div class="sigem-muted">{{ $fmtNum($viagem->km_saida) }} → {{ $fmtNum($viagem->km_retorno) }}</div>
+                                @else
+                                    <span class="sigem-muted">saiu com {{ $fmtNum($viagem->km_saida) }} {{ $un }}</span>
+                                @endif
+                            </td>
+                            <td class="whitespace-nowrap"><x-sigem.status :tom="$viagem->situacao_tom">{{ $viagem->situacao_formatada }}</x-sigem.status></td>
+                        </tr>
+                    @endforeach
+                </x-sigem.table>
             @endif
+        </x-sigem.card>
 
-            <button type="button" @click="modalAbastecimento = true" class="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-800 hover:bg-amber-100 dark:border-amber-700/60 dark:bg-amber-900/30 dark:text-amber-300 transition">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                Lançar Abastecimento
-            </button>
-        </div>
+        <x-sigem.card :padded="false" title="Abastecimentos" id="t-abast" :subtitle="$totalAbastecimentos > $abastecimentos->count() ? 'Últimos ' . $abastecimentos->count() . ' de ' . $totalAbastecimentos : null">
+            @if($abastecimentos->isEmpty())
+                <x-sigem.empty title="Nenhum abastecimento lançado" description="Lance cada abastecimento com o cupom do posto para acompanhar consumo e gasto.">
+                    @if($podeAbastecer)<x-sigem.button @click="painel = 'abastecimento'; window.scrollTo({ top: 0, behavior: 'smooth' })">Lançar abastecimento</x-sigem.button>@endif
+                </x-sigem.empty>
+            @else
+                <x-sigem.table min-width="720px">
+                    <x-slot:head>
+                        <th scope="col">Data</th>
+                        <th scope="col" class="text-right">Litros</th>
+                        <th scope="col" class="text-right">Total</th>
+                        <th scope="col" class="text-right">Hodômetro</th>
+                        <th scope="col" class="text-right">Consumo</th>
+                        <th scope="col">Posto</th>
+                    </x-slot:head>
+                    @foreach($abastecimentos as $ab)
+                        <tr>
+                            <td class="whitespace-nowrap">
+                                {{ $ab->data?->format('d/m/Y') }}
+                                <div class="sigem-muted">{{ Veiculo::rotuloCombustivel($ab->combustivel) }}</div>
+                            </td>
+                            <td class="whitespace-nowrap text-right tabular-nums">
+                                {{ $fmtNum($ab->litros, 2) }} L
+                                <div class="sigem-muted">{{ $fmtMoeda($ab->valor_litro) }}/L</div>
+                            </td>
+                            <td class="whitespace-nowrap text-right tabular-nums font-semibold">{{ $fmtMoeda($ab->valor_total) }}</td>
+                            <td class="whitespace-nowrap text-right tabular-nums">{{ $fmtNum($ab->km_veiculo) }} {{ $un }}</td>
+                            <td class="whitespace-nowrap text-right tabular-nums">{{ $ab->consumo_medio_kml ? $fmtNum($ab->consumo_medio_kml, 2) . ' ' . $un . '/L' : '—' }}</td>
+                            <td class="max-w-[200px]">
+                                <div class="truncate" title="{{ $ab->posto_combustivel }}">{{ $ab->posto_combustivel }}</div>
+                                @if($ab->numero_cupom_fiscal)<div class="sigem-muted">Cupom {{ $ab->numero_cupom_fiscal }}</div>@endif
+                            </td>
+                        </tr>
+                    @endforeach
+                </x-sigem.table>
+            @endif
+        </x-sigem.card>
+
+        <x-sigem.card :padded="false" title="Manutenções" id="t-manut" :subtitle="$totalManutencoes > $manutencoes->count() ? 'Últimas ' . $manutencoes->count() . ' de ' . $totalManutencoes : null">
+            @if($manutencoes->isEmpty())
+                <x-sigem.empty title="Nenhuma manutenção registrada" description="Ordens de manutenção preventiva e corretiva deste veículo aparecem aqui." />
+            @else
+                <x-sigem.table min-width="680px">
+                    <x-slot:head>
+                        <th scope="col">Ordem</th>
+                        <th scope="col">Serviço</th>
+                        <th scope="col">Agendada</th>
+                        <th scope="col" class="text-right">Valor estimado</th>
+                        <th scope="col">Situação</th>
+                    </x-slot:head>
+                    @foreach($manutencoes as $man)
+                        <tr>
+                            <td class="whitespace-nowrap">
+                                {{ $man->numero }}
+                                <div class="sigem-muted">{{ $man->tipo_formatado }}</div>
+                            </td>
+                            <td class="max-w-[280px]">
+                                <div class="truncate" title="{{ $man->descricao_problema }}">{{ $man->descricao_problema ?: '—' }}</div>
+                                @if($man->oficina_executora)<div class="truncate sigem-muted">{{ $man->oficina_executora }}</div>@endif
+                            </td>
+                            <td class="whitespace-nowrap">{{ $man->data_agendamento?->format('d/m/Y') ?? '—' }}</td>
+                            <td class="whitespace-nowrap text-right tabular-nums">{{ (float) $man->valor_total_estimado > 0 ? $fmtMoeda($man->valor_total_estimado) : '—' }}</td>
+                            <td><x-sigem.status :tom="$man->status_tom">{{ $man->status_formatado }}</x-sigem.status></td>
+                        </tr>
+                    @endforeach
+                </x-sigem.table>
+            @endif
+        </x-sigem.card>
     </div>
 
-    <!-- Cards de Métricas do Veículo -->
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-            <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Odômetro Atual</span>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-3xl font-extrabold font-mono text-gray-900 dark:text-white">{{ number_format($veiculo->km_atual, 0, ',', '.') }}</span>
-                <span class="text-sm font-semibold text-gray-500">Km</span>
-            </div>
-            <p class="text-xs text-gray-500 mt-1">Registrado no último diário de bordo</p>
-        </div>
-
-        <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-            <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Consumo Médio</span>
-            <div class="mt-2 flex items-baseline gap-2">
-                @php
-                    $ultimoConsumo = $abastecimentos->firstWhere('consumo_medio_kml', '!=', null);
-                @endphp
-                <span class="text-3xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
-                    {{ $ultimoConsumo ? number_format($ultimoConsumo->consumo_medio_kml, 2, ',', '.') : '--' }}
-                </span>
-                <span class="text-sm font-semibold text-gray-500">Km/L</span>
-            </div>
-            <p class="text-xs text-gray-500 mt-1">Cálculo bomba a bomba</p>
-        </div>
-
-        <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-            <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Total de Viagens</span>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-3xl font-extrabold text-blue-600 dark:text-blue-400">{{ $veiculo->viagens()->count() }}</span>
-                <span class="text-sm font-semibold text-gray-500">missões</span>
-            </div>
-            <p class="text-xs text-gray-500 mt-1">Diário de bordo auditável</p>
-        </div>
-
-        <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-            <span class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Despesa Combustível</span>
-            <div class="mt-2 flex items-baseline gap-2">
-                <span class="text-2xl font-extrabold text-gray-900 dark:text-white">
-                    R$ {{ number_format($veiculo->abastecimentos()->sum('valor_total'), 2, ',', '.') }}
-                </span>
-            </div>
-            <p class="text-xs text-gray-500 mt-1">{{ number_format($veiculo->abastecimentos()->sum('litros'), 1, ',', '.') }} Litros abastecidos</p>
-        </div>
-    </div>
-
-    <!-- Grade: Informações Técnicas & Histórico -->
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-
-        <!-- Coluna Esquerda: Detalhes Cadastrais -->
-        <div class="space-y-6 lg:col-span-1">
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-                <h3 class="text-base font-bold text-gray-900 dark:text-white border-b border-gray-100 pb-3 dark:border-gray-700 mb-4">
-                    Dados Patrimoniais
-                </h3>
-
-                <dl class="space-y-3 text-xs">
-                    <div class="flex justify-between py-1 border-b border-gray-50 dark:border-gray-700/50">
-                        <dt class="font-medium text-gray-500 dark:text-gray-400">Patrimônio / Tombamento:</dt>
-                        <dd class="font-bold font-mono text-gray-900 dark:text-white">{{ $veiculo->patrimonio_tombamento ?? 'Não tombado' }}</dd>
-                    </div>
-                    <div class="flex justify-between py-1 border-b border-gray-50 dark:border-gray-700/50">
-                        <dt class="font-medium text-gray-500 dark:text-gray-400">RENAVAM:</dt>
-                        <dd class="font-bold font-mono text-gray-900 dark:text-white">{{ $veiculo->renavam ?? 'Não informado' }}</dd>
-                    </div>
-                    <div class="flex justify-between py-1 border-b border-gray-50 dark:border-gray-700/50">
-                        <dt class="font-medium text-gray-500 dark:text-gray-400">Chassi:</dt>
-                        <dd class="font-bold font-mono text-gray-900 dark:text-white uppercase">{{ $veiculo->chassi ?? 'Não informado' }}</dd>
-                    </div>
-                    <div class="flex justify-between py-1 border-b border-gray-50 dark:border-gray-700/50">
-                        <dt class="font-medium text-gray-500 dark:text-gray-400">Capacidade Tanque:</dt>
-                        <dd class="font-bold text-gray-900 dark:text-white">{{ $veiculo->capacidade_tanque ? $veiculo->capacidade_tanque . ' L' : 'N/I' }}</dd>
-                    </div>
-                    <div class="flex justify-between py-1 border-b border-gray-50 dark:border-gray-700/50">
-                        <dt class="font-medium text-gray-500 dark:text-gray-400">Lotação Passageiros:</dt>
-                        <dd class="font-bold text-gray-900 dark:text-white">{{ $veiculo->capacidade_passageiros ?? 5 }} lugares</dd>
-                    </div>
-                    <div class="flex justify-between py-1">
-                        <dt class="font-medium text-gray-500 dark:text-gray-400">Motorista Fixo / Habitual:</dt>
-                        <dd class="font-bold text-gray-900 dark:text-white">{{ $veiculo->motoristaResponsavel ? $veiculo->motoristaResponsavel->user->name : 'Qualquer credenciado' }}</dd>
-                    </div>
-                </dl>
-
-                @if($veiculo->observacoes)
-                    <div class="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
-                        <span class="font-bold block text-[11px] uppercase tracking-wider text-gray-400 mb-1">Observações da Garagem:</span>
-                        {{ $veiculo->observacoes }}
-                    </div>
+    <aside class="flex min-w-0 flex-[1_1_280px] flex-col gap-5">
+        <x-sigem.card title="Dados do veículo" id="t-dados">
+            <dl class="sigem-dl">
+                <div><dt>{{ $veiculo->usa_horimetro ? 'Horímetro' : 'Hodômetro' }}</dt><dd class="tabular-nums">{{ $veiculo->hodometro_formatado }}</dd></div>
+                <div><dt>Ano</dt><dd>{{ $veiculo->ano_fabricacao }}/{{ $veiculo->ano_modelo }}</dd></div>
+                <div><dt>Combustível</dt><dd>{{ $veiculo->combustivel_formatado }}</dd></div>
+                <div><dt>Tanque</dt><dd>{{ (float) $veiculo->capacidade_tanque > 0 ? $fmtNum($veiculo->capacidade_tanque, 0) . ' L' : '—' }}</dd></div>
+                <div><dt>Lugares</dt><dd>{{ $veiculo->capacidade_passageiros ?: '—' }}</dd></div>
+                <div><dt>Secretaria</dt><dd>{{ $veiculo->unidadeAdministrativa?->sigla ?: ($veiculo->unidadeAdministrativa?->nome ?? 'Garagem central') }}</dd></div>
+                <div><dt>Patrimônio</dt><dd>{{ $veiculo->patrimonio_tombamento ?: '—' }}</dd></div>
+                <div><dt>Renavam</dt><dd>{{ $veiculo->renavam ?: '—' }}</dd></div>
+                <div class="col-span-full"><dt>Chassi</dt><dd class="break-all font-mono text-[13px]">{{ $veiculo->chassi ?: '—' }}</dd></div>
+                @if($veiculo->motoristaResponsavel)
+                    <div><dt>Responsável</dt><dd>{{ $veiculo->motoristaResponsavel->name }}</dd></div>
                 @endif
-            </div>
+            </dl>
+        </x-sigem.card>
 
-            <!-- Manutenções e Preventivas -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-                <div class="flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-700 mb-4">
-                    <h3 class="text-base font-bold text-gray-900 dark:text-white">
-                        Manutenções & Oficina
-                    </h3>
-                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                        {{ $manutencoes->count() }}
-                    </span>
-                </div>
-
-                @if($manutencoes->isEmpty())
-                    <p class="text-xs text-gray-500 dark:text-gray-400 text-center py-4">Nenhuma ordem de manutenção registrada para este veículo.</p>
-                @else
-                    <div class="space-y-3">
-                        @foreach($manutencoes as $manut)
-                            <div class="rounded-xl border border-gray-100 p-3 dark:border-gray-700/60 dark:bg-gray-700/30">
-                                <div class="flex items-center justify-between text-xs mb-1">
-                                    <span class="font-bold text-gray-900 dark:text-white">{{ $manut->numero }}</span>
-                                    <span class="text-gray-500">{{ $manut->data_agendamento ? $manut->data_agendamento->format('d/m/Y') : '' }}</span>
-                                </div>
-                                <p class="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">{{ $manut->descricao_servico }}</p>
-                                <div class="mt-2 flex items-center justify-between text-[11px]">
-                                    <span class="font-semibold text-gray-500">{{ ucfirst($manut->tipo) }}</span>
-                                    @if($manut->custo_total > 0)
-                                        <span class="font-bold text-gray-900 dark:text-white">R$ {{ number_format($manut->custo_total, 2, ',', '.') }}</span>
-                                    @endif
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
-        </div>
-
-        <!-- Coluna Direita: Diário de Bordo & Abastecimentos (Abas/Cards) -->
-        <div class="space-y-6 lg:col-span-2">
-
-            <!-- Card: Diário de Bordo (Viagens Recentes) -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-                <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-700 mb-4">
-                    <div>
-                        <h2 class="text-base font-bold text-gray-900 dark:text-white">
-                            Diário de Bordo Digital (Saídas e Missões)
-                        </h2>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Controle de percurso, motorista, quilometragem e finalidade da viagem.</p>
-                    </div>
-                    <span class="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                        {{ $viagens->count() }} registros
-                    </span>
-                </div>
-
-                @if($viagens->isEmpty())
-                    <div class="py-8 text-center">
-                        <svg class="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Nenhuma viagem registrada no diário deste veículo.</p>
-                    </div>
-                @else
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead>
-                                <tr class="border-b border-gray-100 dark:border-gray-700 text-gray-400 uppercase font-semibold">
-                                    <th class="py-2.5">Nº Viagem</th>
-                                    <th class="py-2.5">Data / Saída</th>
-                                    <th class="py-2.5">Condutor Oficial</th>
-                                    <th class="py-2.5">Destino & Motivo</th>
-                                    <th class="py-2.5 text-right">Km Percorrido</th>
-                                    <th class="py-2.5 text-center">Situação</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                                @foreach($viagens as $viagem)
-                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition">
-                                        <td class="py-3 font-mono font-bold text-gray-900 dark:text-white">
-                                            {{ $viagem->numero }}
-                                        </td>
-                                        <td class="py-3 text-gray-600 dark:text-gray-300">
-                                            {{ $viagem->data_saida ? $viagem->data_saida->format('d/m/Y H:i') : '--' }}
-                                        </td>
-                                        <td class="py-3 font-semibold text-gray-800 dark:text-gray-200">
-                                            {{ $viagem->motorista ? $viagem->motorista->user->name : 'Não informado' }}
-                                        </td>
-                                        <td class="py-3">
-                                            <p class="font-bold text-gray-900 dark:text-white">{{ $viagem->destino }}</p>
-                                            <p class="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-xs">{{ $viagem->finalidade }}</p>
-                                        </td>
-                                        <td class="py-3 text-right font-mono font-bold text-gray-900 dark:text-white">
-                                            @if($viagem->km_percorrido)
-                                                {{ number_format($viagem->km_percorrido, 0, ',', '.') }} km
-                                                <span class="block text-[10px] text-gray-400">{{ $viagem->km_saida }} → {{ $viagem->km_retorno }}</span>
-                                            @else
-                                                <span class="text-blue-500 font-sans font-normal text-[11px]">Em trânsito</span>
-                                            @endif
-                                        </td>
-                                        <td class="py-3 text-center">
-                                            @if($viagem->situacao === 'concluida')
-                                                <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-                                                    Concluída
-                                                </span>
-                                            @elseif($viagem->situacao === 'em_andamento')
-                                                <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 animate-pulse">
-                                                    Em Viagem
-                                                </span>
-                                            @else
-                                                <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-bold text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                                                    {{ ucfirst($viagem->situacao) }}
-                                                </span>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-            </div>
-
-            <!-- Card: Abastecimentos Recentes -->
-            <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-theme-sm dark:border-gray-800 dark:bg-gray-800">
-                <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-700 mb-4">
-                    <div>
-                        <h2 class="text-base font-bold text-gray-900 dark:text-white">
-                            Histórico de Abastecimentos & Consumo
-                        </h2>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Auditoria de postos conveniados, cupons fiscais e rendimento quilométrico.</p>
-                    </div>
-                    <span class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                        {{ $abastecimentos->count() }} abastecimentos
-                    </span>
-                </div>
-
-                @if($abastecimentos->isEmpty())
-                    <div class="py-8 text-center">
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Nenhum abastecimento lançado ainda.</p>
-                    </div>
-                @else
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead>
-                                <tr class="border-b border-gray-100 dark:border-gray-700 text-gray-400 uppercase font-semibold">
-                                    <th class="py-2.5">Data</th>
-                                    <th class="py-2.5">Combustível</th>
-                                    <th class="py-2.5">Posto / Cupom</th>
-                                    <th class="py-2.5 text-right">Volume</th>
-                                    <th class="py-2.5 text-right">Total (R$)</th>
-                                    <th class="py-2.5 text-right">Km Bomba</th>
-                                    <th class="py-2.5 text-right">Consumo Médio</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100 dark:divide-gray-700/60">
-                                @foreach($abastecimentos as $abast)
-                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition">
-                                        <td class="py-3 font-semibold text-gray-700 dark:text-gray-300">
-                                            {{ $abast->data ? $abast->data->format('d/m/Y') : '--' }}
-                                        </td>
-                                        <td class="py-3 text-gray-900 dark:text-white font-medium">
-                                            {{ $abast->combustivel }}
-                                        </td>
-                                        <td class="py-3">
-                                            <p class="font-bold text-gray-900 dark:text-white">{{ $abast->posto_combustivel }}</p>
-                                            <p class="text-[10px] text-gray-400 font-mono">{{ $abast->numero_cupom_fiscal ? 'Cupom: ' . $abast->numero_cupom_fiscal : 'Sem cupom' }}</p>
-                                        </td>
-                                        <td class="py-3 text-right font-mono font-bold text-gray-900 dark:text-white">
-                                            {{ number_format($abast->litros, 2, ',', '.') }} L
-                                        </td>
-                                        <td class="py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                            R$ {{ number_format($abast->valor_total, 2, ',', '.') }}
-                                        </td>
-                                        <td class="py-3 text-right font-mono text-gray-600 dark:text-gray-300">
-                                            {{ number_format($abast->km_veiculo, 0, ',', '.') }}
-                                        </td>
-                                        <td class="py-3 text-right">
-                                            @if($abast->consumo_medio_kml)
-                                                <span class="inline-flex items-center rounded bg-emerald-50 px-2 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                                                    {{ number_format($abast->consumo_medio_kml, 2, ',', '.') }} km/l
-                                                </span>
-                                            @else
-                                                <span class="text-gray-400 text-[11px]">--</span>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-            </div>
-
-        </div>
-
-    </div>
-
-    <!-- Modal Alpine: Registrar Saída (Viagem) -->
-    <div x-show="modalSaida" x-cloak class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
-        x-transition:enter="transition ease-out duration-200"
-        x-transition:enter-start="opacity-0 transform scale-95"
-        x-transition:enter-end="opacity-100 transform scale-100"
-        x-transition:leave="transition ease-in duration-150"
-        x-transition:leave-start="opacity-100 transform scale-100"
-        x-transition:leave-end="opacity-0 transform scale-95">
-        <div class="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800" @click.away="modalSaida = false">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-700">
-                <div class="flex items-center gap-3">
-                    <div class="rounded-xl bg-blue-100 p-2 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="text-base font-bold text-gray-900 dark:text-white">Registrar Saída da Garagem</h3>
-                        <p class="text-xs text-gray-500">Veículo: <strong class="text-gray-900 dark:text-white">{{ $veiculo->placa }} ({{ $veiculo->modelo }})</strong></p>
-                    </div>
-                </div>
-                <button type="button" @click="modalSaida = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-
-            <form action="{{ route('frota.viagens.store') }}" method="POST" class="mt-5 space-y-4">
-                @csrf
-                <input type="hidden" name="veiculo_id" value="{{ $veiculo->id }}">
-
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Condutor Oficial Credenciado <span class="text-red-500">*</span>
-                    </label>
-                    <select name="motorista_id" required class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                        <option value="">Selecione o motorista...</option>
-                        @foreach($motoristasAptos as $mot)
-                            <option value="{{ $mot->id }}">
-                                {{ $mot->user->name }} (CNH {{ $mot->cnh_categoria }} - Venc: {{ $mot->cnh_validade ? $mot->cnh_validade->format('d/m/Y') : 'N/I' }})
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Km de Saída <span class="text-red-500">*</span>
-                        </label>
-                        <input type="number" name="km_saida" value="{{ $veiculo->km_atual }}" min="{{ $veiculo->km_atual }}" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-mono text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Data e Horário
-                        </label>
-                        <input type="datetime-local" name="data_saida" value="{{ now()->format('Y-m-d\TH:i') }}"
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Destino / Itinerário <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" name="destino" placeholder="Ex: Hospital Regional, Escola do Campo, Obras Bairro Central" required
-                        class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Finalidade / Missão Oficial <span class="text-red-500">*</span>
-                    </label>
-                    <textarea name="finalidade" rows="2" placeholder="Motivo do deslocamento a serviço da Prefeitura..." required
-                        class="w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"></textarea>
-                </div>
-
-                <!-- Checklist Rápido de Saída -->
-                <div class="rounded-xl bg-gray-50 p-3 dark:bg-gray-700/40 text-xs">
-                    <span class="font-bold text-gray-700 dark:text-gray-300 block mb-2">Checklist de Saída da Garagem:</span>
-                    <div class="grid grid-cols-3 gap-2">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="check_pneus" value="ok" checked class="rounded border-gray-300 text-brand-600">
-                            <span>Pneus calibrados</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="check_oleo" value="ok" checked class="rounded border-gray-300 text-brand-600">
-                            <span>Óleo / Arrefecimento</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="check_docs" value="ok" checked class="rounded border-gray-300 text-brand-600">
-                            <span>CRLV & Seguro OK</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                    <button type="button" @click="modalSaida = false" class="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
-                        Cancelar
-                    </button>
-                    <button type="submit" class="rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700">
-                        Confirmar Saída
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal Alpine: Registrar Retorno (se viagem ativa) -->
-    @if(isset($viagemAtiva) && $viagemAtiva)
-    <div x-show="modalRetorno" x-cloak class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
-        <div class="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800" @click.away="modalRetorno = false">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-700">
-                <div class="flex items-center gap-3">
-                    <div class="rounded-xl bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="text-base font-bold text-gray-900 dark:text-white">Registrar Retorno à Garagem</h3>
-                        <p class="text-xs text-gray-500">Viagem: <strong class="text-gray-900 dark:text-white">{{ $viagemAtiva->numero }}</strong> (Km saída: {{ $viagemAtiva->km_saida }})</p>
-                    </div>
-                </div>
-                <button type="button" @click="modalRetorno = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-
-            <form action="{{ route('frota.viagens.retorno', $viagemAtiva) }}" method="POST" class="mt-5 space-y-4">
-                @csrf
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Quilometragem no Odômetro ao Retornar <span class="text-red-500">*</span>
-                    </label>
-                    <input type="number" name="km_retorno" value="{{ $viagemAtiva->km_saida + 1 }}" min="{{ $viagemAtiva->km_saida }}" required
-                        class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-mono text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    <p class="text-[11px] text-gray-500 mt-1">Deve ser maior ou igual a {{ number_format($viagemAtiva->km_saida, 0, ',', '.') }} km.</p>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Ocorrências / Avarias na Viagem
-                    </label>
-                    <textarea name="ocorrencias" rows="2" placeholder="Descreva eventuais problemas mecânicos, multas, furos de pneus ou observações..."
-                        class="w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"></textarea>
-                </div>
-
-                <div class="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                    <button type="button" @click="modalRetorno = false" class="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
-                        Cancelar
-                    </button>
-                    <button type="submit" class="rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-emerald-700">
-                        Concluir e Liberar Veículo
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-    @endif
-
-    <!-- Modal Alpine: Registrar Abastecimento -->
-    <div x-show="modalAbastecimento" x-cloak class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
-        <div class="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800" @click.away="modalAbastecimento = false">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-4 dark:border-gray-700">
-                <div class="flex items-center gap-3">
-                    <div class="rounded-xl bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="text-base font-bold text-gray-900 dark:text-white">Lançar Abastecimento</h3>
-                        <p class="text-xs text-gray-500">Veículo: <strong class="text-gray-900 dark:text-white">{{ $veiculo->placa }}</strong> ({{ $veiculo->combustivel }})</p>
-                    </div>
-                </div>
-                <button type="button" @click="modalAbastecimento = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-
-            <form action="{{ route('frota.abastecimentos.store') }}" method="POST" class="mt-5 space-y-4" x-data="{ litros: 0, valorLitro: 0 }">
-                @csrf
-                <input type="hidden" name="veiculo_id" value="{{ $veiculo->id }}">
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Data <span class="text-red-500">*</span>
-                        </label>
-                        <input type="date" name="data" value="{{ date('Y-m-d') }}" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Combustível <span class="text-red-500">*</span>
-                        </label>
-                        <input type="text" name="combustivel" value="{{ $veiculo->combustivel }}" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Litros <span class="text-red-500">*</span>
-                        </label>
-                        <input type="number" step="0.01" name="litros" x-model="litros" placeholder="0.00" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-mono text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Preço/L (R$) <span class="text-red-500">*</span>
-                        </label>
-                        <input type="number" step="0.001" name="valor_litro" x-model="valorLitro" placeholder="0.000" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-mono text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Total Estimado
-                        </label>
-                        <div class="flex items-center h-10 px-3 rounded-xl bg-gray-100 dark:bg-gray-700 font-mono font-bold text-xs text-gray-900 dark:text-white">
-                            R$ <span x-text="(litros * valorLitro).toFixed(2)">0.00</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Km no Odômetro <span class="text-red-500">*</span>
-                        </label>
-                        <input type="number" name="km_veiculo" value="{{ $veiculo->km_atual }}" min="{{ $veiculo->km_atual }}" required
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-mono text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                            Nº Cupom / NF
-                        </label>
-                        <input type="text" name="numero_cupom_fiscal" placeholder="Ex: NF-e 45291"
-                            class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
-                        Posto Conveniado / Fornecedor <span class="text-red-500">*</span>
-                    </label>
-                    <input type="text" name="posto_combustivel" placeholder="Ex: Auto Posto Municipal Ltda / Ipiranga" required
-                        class="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500">
-                </div>
-
-                <div class="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                    <button type="button" @click="modalAbastecimento = false" class="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
-                        Cancelar
-                    </button>
-                    <button type="submit" class="rounded-xl bg-amber-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-amber-700">
-                        Salvar Abastecimento
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
+        @if($veiculo->observacoes)
+            <x-sigem.card title="Observações" id="t-obs">
+                <p class="m-0 whitespace-pre-line">{{ $veiculo->observacoes }}</p>
+            </x-sigem.card>
+        @endif
+    </aside>
+</div>
 </div>
 @endsection

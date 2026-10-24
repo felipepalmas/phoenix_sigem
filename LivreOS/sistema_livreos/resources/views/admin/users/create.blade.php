@@ -113,6 +113,17 @@
                     @error('departamento')<p class="mt-1 text-sm text-error-600 dark:text-error-400">{{ $message }}</p>@enderror
                 </div>
                 <div>
+                    <label for="unidade_administrativa_id" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Lotação (secretaria)</label>
+                    <select id="unidade_administrativa_id" name="unidade_administrativa_id" @disabled(!auth()->user()->ehGestorGeral()) class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
+                        <option value="">Sem lotação</option>
+                        @foreach(($unidades ?? collect()) as $unidade)
+                            <option value="{{ $unidade->id }}" @selected((string) old('unidade_administrativa_id') === (string) $unidade->id)>{{ $unidade->sigla ? $unidade->sigla . ' — ' : '' }}{{ $unidade->nome }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Define em nome de qual secretaria o servidor recebe, tramita e aprova.</p>
+                    @error('unidade_administrativa_id')<p class="mt-1 text-sm text-error-600 dark:text-error-400">{{ $message }}</p>@enderror
+                </div>
+                <div>
                     <label for="custo_hora_tecnica" class="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">Custo da Hora Técnica (R$)</label>
                     <input type="number" id="custo_hora_tecnica" name="custo_hora_tecnica" value="{{ old('custo_hora_tecnica') }}" step="0.01" min="0" placeholder="0,00" class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90">
                     @error('custo_hora_tecnica')<p class="mt-1 text-sm text-error-600 dark:text-error-400">{{ $message }}</p>@enderror
